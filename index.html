@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Painel do Sinistro · Grupo Support</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/estilo.css">
+</head>
+<body>
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
+<button class="menu-botao" id="abrir-menu" type="button" aria-label="Abrir menu">☰</button>
+<div class="sombra-menu" aria-hidden="true"></div>
+
+<div class="app">
+  <aside class="lateral" id="lateral" aria-label="Menu">
+    <button class="fechar-lat" type="button" aria-label="Fechar menu">×</button>
+    <a class="marca-lat" href="#/inicio">
+      <span class="logo-lat">GS</span>
+      <span class="nome"><b>Grupo Support</b><small>Sinistro</small></span>
+    </a>
+    <nav aria-label="Seções"><!-- preenchido por app.js --></nav>
+    <div class="rodape-lat">
+      <b>Uso interno.</b> Contém dados de associados — não compartilhe o endereço nem a senha.
+    </div>
+  </aside>
+
+  <div class="area">
+    <div class="topo"><div class="largura">
+      <div class="trilha" id="trilha"></div>
+      <div class="dir">
+        <span class="selo-fonte" id="selo-fonte"></span>
+        <span>Atualizado em <b id="gerado-topo"></b></span>
+      </div>
+    </div></div>
+
+    <main id="conteudo"><!-- preenchido pelas telas --></main>
+
+    <footer class="rodape"><div class="largura">
+      <span><b>Grupo Support</b> · Rotina do sinistro · uso interno</span>
+      <span>SIGA × SGA — contém dados de associados</span>
+    </div></footer>
+  </div>
+</div>
+
+<div id="dica" role="status" aria-live="polite"></div>
+
+<script src="assets/base.js"></script>
+<script src="assets/dados.js"></script>
+<script src="assets/setores.js"></script>
+<script src="assets/app.js"></script>
+<script src="assets/formulario.js"></script>
+</body>
+</html>

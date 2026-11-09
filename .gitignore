@@ -1,0 +1,21 @@
+# dependências (não há build; aqui por segurança)
+node_modules/
+
+# variáveis reais — NUNCA versionar (só o .env.example vai para o repo)
+.env
+.env.local
+.env.*.local
+
+# credenciais da conta de serviço do Google (caso alguém copie para cá)
+*service-account*.json
+sinistro-grupo-support-*.json
+
+# Vercel
+.vercel/
+
+# sistema operacional / editores
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
