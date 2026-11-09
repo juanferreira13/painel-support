@@ -15,6 +15,28 @@
   const COL_SGA = { rot: "Status SGA", key: "statusSga", classe: "fixo", difere: true };
 
   GS.SETORES = {
+    sinistro: {
+      chave: "sinistro",
+      rotulo: "Sinistro",
+      etiqueta: "Sinistro",
+      icone: "sinistro",
+      tituloDash: "Dashboard do sinistro",
+      aba: "GERENCIAL SINISTRO",
+      ledeDash: "Visão geral de todos os eventos do sinistro, lado a lado com a situação no SIGA e no SGA. Os três setores — analistas, reguladores e consultores — saem daqui.",
+      modelo: "geral",
+      colunas: [
+        { rot: "Protocolo", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Setor", key: "setor", classe: "fixo" },
+        { rot: "Nome", key: "nome" },
+        { rot: "Placa", key: "placaSiga", classe: "fixo" },
+        { rot: "Cobertura", key: "cobertura", classe: "fixo" },
+        { rot: "Competência", key: "competencia", classe: "fixo", tipo: "mes" },
+        COL_SIGA, COL_SGA,
+        { rot: "Classificação negativa", key: "classif" },
+        COL_DIAS,
+      ],
+    },
+
     analistas: {
       chave: "analistas",
       rotulo: "Analistas",
@@ -116,5 +138,6 @@
     },
   };
 
-  GS.ORDEM_SETORES = ["analistas", "reguladores", "consultores"];
+  GS.ORDEM_SETORES = ["analistas", "reguladores", "consultores"];   // têm preenchimento
+  GS.DASH_ORDEM = ["sinistro", "analistas", "reguladores", "consultores"];   // ordem dos dashboards
 })();

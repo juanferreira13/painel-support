@@ -174,6 +174,7 @@
 
   /* ----------------------------------------------------------- API de acesso aos dados */
   const GRUPOS = {
+    sinistro: () => true,   // visão geral: todos os processos
     analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS",
     reguladores: (p) => p.setor === "REGULADORES",
     consultores: (p) => p.setor === "CONSULTORES",
@@ -196,7 +197,8 @@
   GS.DB = {
     fonte: GS.FONTE,
     listas: { analistas: ANALISTAS, reguladores: REGULADORES, consultores: CONSULTORES, situacoes: SITUACOES,
-              concluido: CONCLUIDO, statusReg: STATUS_REG, oficinas: OFICINAS_TAB },
+              concluido: CONCLUIDO, statusReg: STATUS_REG, oficinas: OFICINAS_TAB,
+              setores: ["ANALISTAS", "VIDROS", "REGULADORES", "CONSULTORES"] },
     // Assíncrono de propósito: amanhã vira fetch('/api/dados?setor='+chave) sem mudar as telas.
     carregar(chave) {
       return new Promise((ok) => {

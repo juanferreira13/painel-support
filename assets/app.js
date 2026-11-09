@@ -29,6 +29,7 @@
   function valorColuna(p, col, cfg) {
     if (col.key === "analistaEff" || col.key === "consultorEff") return pessoaDe(p, cfg);
     if (col.tipo === "data") return dataBr(p[col.key]);
+    if (col.tipo === "mes") { const v = p[col.key]; return v ? v.slice(5, 7) + "/" + v.slice(0, 4) : ""; }
     const v = p[col.key];
     return v === null || v === undefined ? "" : v;
   }
@@ -37,7 +38,7 @@
   /* ===================================================== menu lateral + topo */
   const NAV = [
     { itens: [{ rota: "inicio", rotulo: "Início", icone: "inicio" }] },
-    { rot: "Dashboards", itens: GS.ORDEM_SETORES.map((c) => ({ rota: "dashboard/" + c, rotulo: GS.SETORES[c].rotulo, icone: GS.SETORES[c].icone })) },
+    { rot: "Dashboards", itens: GS.DASH_ORDEM.map((c) => ({ rota: "dashboard/" + c, rotulo: GS.SETORES[c].rotulo, icone: GS.SETORES[c].icone })) },
     { rot: "Preenchimento", itens: GS.ORDEM_SETORES.map((c) => ({ rota: "preenchimento/" + c, rotulo: GS.SETORES[c].rotulo, icone: "preencher" })) },
   ];
 
@@ -227,14 +228,20 @@
       s.addEventListener("change", aoMudar);
       lab.append(s); selects[id] = s; w.append(lab);
     }
-    // pessoa
-    const listaPessoas = dados.listas[cfg.pessoas] || [];
-    campoSelect("pessoa", cfg.rotulo.replace(/e?s$/, ""), [["", "Todos"], ...listaPessoas.map((p) => [p, p])], estado.pessoa);
-    if (cfg.modelo === "pendencia") {
-      campoSelect("situacao", "Situação", [["*", "Todas"], ["", "(não preenchida)"], ...dados.listas.situacoes.map((s) => [s, s])], estado.situacao);
-      campoSelect("pend", "Pendência", [["", "Todas"], ["acao", "Precisam de ação"], ["ATRASADO", "Atrasados"], ["PREENCHER", "A preencher"], ["EM DIA", "Em dia"], ["CONCLUÍDO", "Concluídos"]], estado.pend);
-    } else if (cfg.modelo === "regulacao") {
-      campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
+    if (cfg.modelo === "geral") {
+      const distintos = (chave) => [...new Set(dados.processos.map((p) => p[chave]))];
+      campoSelect("setor", "Setor", [["", "Todos"], ...(dados.listas.setores || []).map((s) => [s, s])], estado.setor);
+      campoSelect("fsiga", "Status SIGA", [["*", "Todos"], ...distintos("statusSiga").filter(Boolean).sort().map((s) => [s, s])], estado.fsiga);
+      campoSelect("fsga", "Status SGA", [["*", "Todos"], ...distintos("statusSga").sort().map((s) => [s, vazio(s)])], estado.fsga);
+    } else {
+      const listaPessoas = dados.listas[cfg.pessoas] || [];
+      campoSelect("pessoa", cfg.rotulo.replace(/e?s$/, ""), [["", "Todos"], ...listaPessoas.map((p) => [p, p])], estado.pessoa);
+      if (cfg.modelo === "pendencia") {
+        campoSelect("situacao", "Situação", [["*", "Todas"], ["", "(não preenchida)"], ...dados.listas.situacoes.map((s) => [s, s])], estado.situacao);
+        campoSelect("pend", "Pendência", [["", "Todas"], ["acao", "Precisam de ação"], ["ATRASADO", "Atrasados"], ["PREENCHER", "A preencher"], ["EM DIA", "Em dia"], ["CONCLUÍDO", "Concluídos"]], estado.pend);
+      } else if (cfg.modelo === "regulacao") {
+        campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
+      }
     }
     const busca = el("input", { type: "search", placeholder: "protocolo, nome ou placa" });
     busca.value = estado.busca || "";
@@ -244,8 +251,9 @@
     busca.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(aoMudar, 180); });
     const limpar = el("button", { class: "botao claro", type: "button" }, "Limpar filtros");
     limpar.addEventListener("click", () => {
-      Object.assign(estado, { pessoa: "", situacao: null, pend: "", statusRegulacao: "", busca: "" });
-      for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = (k === "situacao") ? "*" : ""; }
+      Object.assign(estado, { pessoa: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null });
+      const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
+      for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
     });
     w.append(limpar);
@@ -255,14 +263,25 @@
   }
   function lerFiltros(estado, cfg) {
     const s = estado._selects; if (!s) return;
-    estado.pessoa = s.pessoa.value;
-    if (cfg.modelo === "pendencia") { estado.situacao = s.situacao.value === "*" ? null : s.situacao.value; estado.pend = s.pend.value; }
-    if (cfg.modelo === "regulacao") estado.statusRegulacao = s.statusRegulacao.value;
+    if (cfg.modelo === "geral") {
+      estado.setor = s.setor.value;
+      estado.fsiga = s.fsiga.value === "*" ? null : s.fsiga.value;
+      estado.fsga = s.fsga.value === "*" ? null : s.fsga.value;
+    } else {
+      estado.pessoa = s.pessoa.value;
+      if (cfg.modelo === "pendencia") { estado.situacao = s.situacao.value === "*" ? null : s.situacao.value; estado.pend = s.pend.value; }
+      if (cfg.modelo === "regulacao") estado.statusRegulacao = s.statusRegulacao.value;
+    }
     estado.busca = s.busca.value.trim();
   }
   function aplicarFiltros(processos, cfg, dados, estado) {
     const termo = GS.semAcento(estado.busca || "");
     return processos.filter((p) => {
+      if (cfg.modelo === "geral") {
+        if (estado.setor && p.setor !== estado.setor) return false;
+        if (estado.fsiga !== null && estado.fsiga !== undefined && p.statusSiga !== estado.fsiga) return false;
+        if (estado.fsga !== null && estado.fsga !== undefined && p.statusSga !== estado.fsga) return false;
+      }
       if (estado.pessoa && pessoaDe(p, cfg) !== estado.pessoa) return false;
       if (cfg.modelo === "pendencia") {
         if (estado.situacao !== null && estado.situacao !== undefined && norm(p.situacao) !== estado.situacao) return false;
@@ -288,7 +307,7 @@
     const h1 = el("h1", { html: 'Painel do <em>sinistro</em>, tudo em um só lugar.' });
     const p = el("p", { class: "lede" }, "Dashboards e preenchimento dos setores de analistas, reguladores e consultores — no mesmo padrão visual da conferência e do acompanhamento, integrados em uma única página.");
     const acoes = el("div", { class: "acoes" });
-    const b1 = el("a", { class: "btn-hero cheio", href: "#/dashboard/analistas" }); b1.append(el("span", null, "Ver dashboards"), svgIcone(ICONES.seta, "#2d350a", 16));
+    const b1 = el("a", { class: "btn-hero cheio", href: "#/dashboard/sinistro" }); b1.append(el("span", null, "Ver dashboards"), svgIcone(ICONES.seta, "#2d350a", 16));
     const b2 = el("a", { class: "btn-hero vazado", href: "#/preenchimento/analistas" }, "Ir para o preenchimento");
     acoes.append(b1, b2);
     const nums = el("div", { class: "hero-nums" });
@@ -308,7 +327,7 @@
     const sw = el("div", { class: "largura" });
     sw.append(el("h2", null, "Funcionalidades"));
     const grade = el("div", { class: "cartoes-grade" });
-    const cartoes = [];
+    const cartoes = [{ rota: "dashboard/sinistro", icone: "sinistro", titulo: "Dashboard · Sinistro", desc: GS.SETORES.sinistro.ledeDash, tags: ["Visão geral", "Matriz SIGA×SGA", "Negativas"] }];
     for (const chave of GS.ORDEM_SETORES) {
       const cfg = GS.SETORES[chave];
       cartoes.push({ rota: "dashboard/" + chave, icone: cfg.icone, titulo: "Dashboard · " + cfg.rotulo, desc: cfg.ledeDash, tags: ["Indicadores", "Gráficos", "Lista"] });
@@ -332,7 +351,7 @@
     trilha(["Sinistro", "Dashboards", cfg.rotulo]);
     mount.replaceChildren(carregando());
     const dados = await GS.DB.carregar(chave);
-    const estado = { pessoa: "", situacao: null, pend: "", statusRegulacao: "", busca: "" };
+    const estado = { pessoa: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null };
 
     mount.replaceChildren();
     mount.append(abertura(cfg, cfg.tituloDash, cfg.ledeDash));
@@ -353,11 +372,17 @@
       cards.situacao = cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
       grade.append(cards.situacao.c, cards.pessoas.c);
       if (cfg.temOficinas) { cards.oficinas = cartao("", "Rede de oficinas", "Oficinas homologadas, com vagas e consultor responsável."); grade.append(cards.oficinas.c); }
-    } else {
+    } else if (cfg.modelo === "regulacao") {
       cards.status = cartao("cinco", "Por status da regulação", "Situação de cada processo. Clique para filtrar.");
       cards.pessoas = cartao("sete", "Por regulador", "Clique em uma linha para filtrar.");
       grade.append(cards.status.c, cards.pessoas.c);
       if (cfg.temMatriz) { cards.matriz = cartao("", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
+    } else { // geral (sinistro)
+      cards.mes = cartao("sete", "Eventos por mês", "Pela competência do evento.");
+      cards.setor = cartao("cinco", "Por setor", "Distribuição dos eventos entre os setores. Clique para filtrar.");
+      cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação. Clique em uma célula para filtrar.");
+      cards.motivos = cartao("cinco", "Motivos de negativa", "Classificação dos eventos negados no SIGA ou no SGA.");
+      grade.append(cards.mes.c, cards.setor.c, cards.matriz.c, cards.motivos.c);
     }
     const listaCard = { c: el("section", { class: "cartao" }), corpo: el("div") };
     const exportar = el("button", { class: "botao", type: "button" }, "Exportar CSV");
@@ -376,10 +401,17 @@
         barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
         if (cards.oficinas) oficinasTabela(cards.oficinas.corpo);
-      } else {
+      } else if (cfg.modelo === "regulacao") {
         barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusRegulacao || "", dados.listas.statusReg.slice(), (k) => { estado.statusRegulacao = estado.statusRegulacao === k ? "" : k; sincFiltros(); atualizar(); }, estado, "statusRegulacao");
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaReg(cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
-        if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { /* filtro cruzado simples pela busca não aplicável; apenas visual */ });
+        if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
+      } else { // geral (sinistro)
+        const eixo = [...new Set(linhas.map((p) => p.competencia))].sort();
+        const conta = new Map(); for (const p of linhas) conta.set(p.competencia, (conta.get(p.competencia) || 0) + 1);
+        G.colunasMes(cards.mes.corpo, eixo, conta, (k) => [mesRotulo(k)]);
+        barrasPorCampo(cards.setor.corpo, linhas, (p) => p.setor, (dados.listas.setores || []).slice(), (k) => { estado.setor = estado.setor === k ? "" : k; sincFiltros(); atualizar(); }, estado, "setor");
+        G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
+        motivosNegativa(cards.motivos.corpo, linhas);
       }
       listaProcessos(listaCard.corpo, linhas, cfg, estado);
       for (const s of listaCard.c.querySelectorAll(".lista-sub")) s.textContent = `${nf.format(linhas.length)} de ${nf.format(dados.processos.length)} processos, conforme os filtros acima.`;
@@ -393,6 +425,9 @@
       if (s.pessoa) s.pessoa.value = estado.pessoa;
       if (s.situacao) s.situacao.value = estado.situacao === null ? "*" : estado.situacao;
       if (s.statusRegulacao) s.statusRegulacao.value = estado.statusRegulacao;
+      if (s.setor) s.setor.value = estado.setor;
+      if (s.fsiga) s.fsiga.value = estado.fsiga === null ? "*" : estado.fsiga;
+      if (s.fsga) s.fsga.value = estado.fsga === null ? "*" : estado.fsga;
     }
     atualizar();
   }
@@ -412,6 +447,21 @@
         itens.push(b);
       }
       return itens;
+    }
+    if (cfg.modelo === "geral") {
+      const total = linhas.length;
+      const neg = linhas.filter((p) => p.statusSiga === "NEGADO" || p.statusSga === "NEGADO").length;
+      const dif = linhas.filter(divergente).length;
+      const sem = linhas.filter((p) => p.statusSga === "").length;
+      const dur = linhas.map((p) => p.diasAberto).filter((d) => typeof d === "number");
+      const media = dur.length ? Math.round(dur.reduce((a, b) => a + b, 0) / dur.length) : null;
+      return [
+        indicadorFixo("Eventos", nf.format(total), cfg.aba, cfg.icone),
+        indicadorFixo("Negados", nf.format(neg), pct(neg, total) + " dos eventos", "atraso", "var(--critico)"),
+        indicadorFixo("Status diferente", nf.format(dif), pct(dif, total) + " · SIGA × SGA", "info", "var(--aviso)"),
+        indicadorFixo("Sem correspondência SGA", nf.format(sem), pct(sem, total) + " dos eventos", "info", "var(--cinza)"),
+        indicadorFixo("Dias em aberto", media === null ? "–" : nf.format(media), "média dos eventos", "relogio"),
+      ];
     }
     // regulacao
     const total = linhas.length;
@@ -464,6 +514,17 @@
     }
     const d = el("div", { class: "rolagem" }); d.append(t);
     corpo.replaceChildren(d);
+  }
+  function motivosNegativa(corpo, linhas) {
+    const n = new Map(); let total = 0;
+    for (const p of linhas) {
+      if (p.statusSiga === "NEGADO" || p.statusSga === "NEGADO") { const k = p.classif || "(sem classificação)"; n.set(k, (n.get(k) || 0) + 1); total++; }
+    }
+    const ordenado = [...n.entries()].sort((a, b) => b[1] - a[1]);
+    const itens = ordenado.slice(0, 9).map(([nome, valor]) => ({ nome, valor, unidade: "evento", unidadeP: "eventos" }));
+    const resto = ordenado.slice(9).reduce((a, [, v]) => a + v, 0);
+    if (resto) itens.push({ nome: `Outros (${ordenado.length - 9})`, valor: resto });
+    G.barras(corpo, itens, total, null, true);
   }
 
   /* ===================================================== util de carregamento */
