@@ -82,7 +82,7 @@
       tituloForm: "Preenchimento — Reguladores",
       aba: "REGULADORES / VISTORIA INICIAL",
       ledeDash: "Processos do setor REGULADORES: regulação de sinistros, vistoria inicial e negativas. Acompanhe por regulador orçamentista e regulador analista, o que está em regulação, o que foi regularizado e os negados em aberto.",
-      ledeForm: "Informe quem regularizou, a data da vistoria inicial e o mês de referência de cada processo. O que você muda fica marcado como não salvo até enviar.",
+      ledeForm: "Informe a data da vistoria inicial de cada processo — o único campo que não existe no SGA. O que você muda fica marcado como não salvo até enviar.",
       pessoas: "reguladores",
       modelo: "regulacao",       // usa statusRegulacao
       pessoaCampo: "responsavel",            // regulador orçamentista (quem fez a vistoria/orçamento)
@@ -90,12 +90,10 @@
       analistaCampo: "reguladorAnalista",    // regulador analista (casado por ID EXTERNO no integrador)
       temMatriz: true,
       // único setor que mantém preenchimento (os demais atualizam só o SGA).
-      // Mantém: Regularizado por, Status, Data da VISTORIA INICIAL (não existe no SGA) e Mês ref.
+      // Fase 2: só a Data da Vistoria Inicial — é o único campo sem lugar no SGA e
+      // o único com destino real na planilha (aba BASE VISTORIA INICIAL, via /api/salvar).
       campos: [
-        { id: "regularizadoPor", rot: "Regularizado por", tipo: "select", fonte: "reguladores", vazio: "Não informado" },
-        { id: "statusRegulacao", rot: "Status da regulação", tipo: "select", fonte: "statusReg", vazio: "Escolha o status" },
         { id: "dataRegulagem", rot: "Data da vistoria inicial", tipo: "date" },
-        { id: "mesReferencia", rot: "Mês referência", tipo: "text", ph: "MM/AAAA" },
       ],
       colunas: [
         { rot: "Protocolo SIGA", key: "protocoloSiga", classe: "fixo" },

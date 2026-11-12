@@ -260,12 +260,23 @@
       const processos = fonte.filter(filtro).map((p) => aplicarOverlay(Object.assign({}, p), overlay));
       return { chave, processos, gerado: GS.GERADO, fonte: GS.FONTE, listas: GS.DB.listas };
     },
-    // Grava valores do preenchimento no overlay (localStorage). Fase 2: POST /api/salvar -> Sheets.
-    salvarValores(registros) {
+    // Grava o preenchimento. Ao vivo: POST /api/salvar (grava a Data da Vistoria
+    // Inicial no Sheets). Demo: só o overlay local. Sempre reflete no overlay.
+    async salvarValores(registros) {
       const o = lerOverlay();
       for (const r of registros) { (o[r.protocolo] = o[r.protocolo] || {})[r.campo] = r.valor; }
       try { localStorage.setItem(CHAVE_VALORES, JSON.stringify(o)); } catch (_) { /* sem persistência */ }
-      return Promise.resolve({ ok: true, total: registros.length });
+      if (LIVE) {
+        try {
+          const resp = await fetch("/api/salvar", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ registros }) });
+          const j = await resp.json().catch(() => ({}));
+          if (!resp.ok) return { ok: false, total: registros.length, erro: (j && j.erro) || ("http " + resp.status) };
+          return { ok: true, total: registros.length, sheets: j };
+        } catch (e) {
+          return { ok: false, total: registros.length, erro: String((e && e.message) || e) };
+        }
+      }
+      return { ok: true, total: registros.length };
     },
     // Resumo para o hero. Chame depois de garantir() (o início aguarda a fonte).
     resumo() {

@@ -11,13 +11,13 @@ import crypto from "node:crypto";
 /* ----------------------------------------------------------- auth (JWT RS256 -> access token) */
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-export async function obterToken(saJson) {
+export async function obterToken(saJson, escopo) {
   const sa = typeof saJson === "string" ? JSON.parse(saJson) : saJson;
   const now = Math.floor(Date.now() / 1000);
   const head = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claim = b64url(JSON.stringify({
     iss: sa.client_email,
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+    scope: escopo || "https://www.googleapis.com/auth/spreadsheets.readonly",
     aud: "https://oauth2.googleapis.com/token",
     iat: now, exp: now + 3600,
   }));
@@ -60,6 +60,21 @@ function paraIso(v) {
   }
   return "";
 }
+// "aaaa-mm-dd" -> "dd/mm/aaaa" (formato da planilha); vazio -> ""
+function isoParaBr(v) {
+  const s = trim(v);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : s;
+}
+// índice da 1ª coluna cujo título casa (normalizado); -1 se nenhuma
+function acharCol(header, nomes) {
+  const alvo = nomes.map((n) => norm(n));
+  for (let i = 0; i < header.length; i++) if (alvo.includes(norm(header[i]))) return i;
+  return -1;
+}
+// letra(s) de coluna A1 a partir do índice 0-based
+function colLetra(i) { let s = ""; i++; while (i) { s = String.fromCharCode(65 + (i - 1) % 26) + s; i = Math.floor((i - 1) / 26); } return s; }
+
 function paraNumero(v) {
   const s = trim(v).replace(/[^\d,.-]/g, "");
   if (!s) return 0;
@@ -174,6 +189,19 @@ export async function carregarTudo(cfg) {
   } catch (_) { /* aba opcional */ }
   const analistaDe = (p) => baseAnalista.get(norm(p.protocoloSga)) || baseAnalista.get(norm(p.protocoloSiga)) || "";
 
+  // BASE VISTORIA INICIAL (NUMERO = PROTOCOLO SIGA -> DATA DA ANALISE): data da vistoria inicial
+  const baseVistoria = new Map();
+  try {
+    const bv = await lerAba(token, sheetSinistro, "BASE VISTORIA INICIAL");
+    const getV = indexador(bv[0] || []);
+    for (const linha of bv.slice(1)) {
+      const num = norm(getV(linha, "NUMERO", "PROTOCOLO SIGA", "PROTOCOLO"));
+      const dt = paraIso(getV(linha, "DATA DA ANALISE", "DATA DA REGULAGEM", "DATA"));
+      if (num && dt) baseVistoria.set(num, dt);
+    }
+  } catch (_) { /* aba opcional */ }
+  const vistoriaDe = (p) => baseVistoria.get(norm(p.protocoloSiga)) || "";
+
   // Reguladores: aba REGULADORES (tem REGULADOR ANALISTA e REGULADOR SGA)
   let reguladores = [];
   if (sheetReguladores) {
@@ -186,8 +214,11 @@ export async function carregarTudo(cfg) {
   // base final: tudo do gerencial que NÃO é regulador + os reguladores (com analista)
   const naoReg = gerais.filter((p) => p.setor !== "REGULADORES");
   const processos = naoReg.concat(reguladores.length ? reguladores : gerais.filter((p) => p.setor === "REGULADORES"));
-  // completa o regulador analista pela BASE quando a coluna da aba veio vazia
-  for (const p of processos) if (p.setor === "REGULADORES" && !p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
+  // completa o regulador analista pela BASE quando a coluna da aba veio vazia; e a data da vistoria inicial
+  for (const p of processos) if (p.setor === "REGULADORES") {
+    if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
+    if (!p.dataRegulagem) p.dataRegulagem = vistoriaDe(p);
+  }
 
   const LIXO = new Set(["", "#N/A", "N/A", "#REF!", "-", "NÃO INFORMADO", "NAO INFORMADO"]);
   const limpo = (v) => { const s = trim(v); return LIXO.has(s.toUpperCase()) ? "" : s; };
@@ -214,4 +245,52 @@ export async function carregarTudo(cfg) {
   return { processos, listas, gerado };
 }
 
-export const _internos = { paraIso, paraNumero, sinais, indexador, mapProcessoSiga };
+/* ----------------------------------------------------------- gravação (Fase 2): Data da Vistoria Inicial */
+// writes = [{ protocolo (SIGA), dataIso }]. Grava na aba BASE VISTORIA INICIAL do gerencial
+// (coluna DATA DA ANALISE), casando por NUMERO = PROTOCOLO SIGA. Atualiza a linha ou cria uma nova.
+export async function salvarVistoria(cfg, writes, opts = {}) {
+  const { saJson, sheetSinistro } = cfg;
+  const ABA = "BASE VISTORIA INICIAL";
+  if (!Array.isArray(writes) || !writes.length) return { ok: true, atualizados: 0, criados: 0 };
+  // dry-run usa escopo de leitura (não grava); real usa escopo de escrita
+  const token = await obterToken(saJson, opts.dryRun ? undefined : "https://www.googleapis.com/auth/spreadsheets");
+  const tabela = await lerAba(token, sheetSinistro, ABA);
+  const header = tabela[0] && tabela[0].length ? tabela[0] : ["NUMERO", "REGULADOR ANALISTA", "DATA DA ANALISE"];
+  const colNum = Math.max(0, acharCol(header, ["NUMERO", "PROTOCOLO SIGA", "PROTOCOLO"]));
+  let colData = acharCol(header, ["DATA DA ANALISE", "DATA DA REGULAGEM", "DATA"]);
+  if (colData < 0) colData = header.length - 1;
+  const linhaDe = new Map();
+  for (let i = 1; i < tabela.length; i++) { const n = norm((tabela[i] || [])[colNum]); if (n && !linhaDe.has(n)) linhaDe.set(n, i + 1); }
+  const q = (aba) => "'" + aba.replace(/'/g, "''") + "'";
+  const dataColLetra = colLetra(colData);
+
+  const updates = [], novos = [];
+  for (const w of writes) {
+    const prot = trim(w.protocolo); if (!prot) continue;
+    const br = isoParaBr(w.dataIso);
+    const row = linhaDe.get(norm(prot));
+    if (row) updates.push({ range: `${q(ABA)}!${dataColLetra}${row}`, values: [[br]] });
+    else { const nova = new Array(header.length).fill(""); nova[colNum] = prot; nova[colData] = br; novos.push(nova); }
+  }
+  if (opts.dryRun) {
+    return { ok: true, dryRun: true, colNum, colData, dataColLetra, totalLinhas: tabela.length - 1,
+             updates: updates.map((u) => u.range + " = " + u.values[0][0]), criariaLinhas: novos.length, novos: novos.map((n) => n.join("|")) };
+  }
+  if (updates.length) {
+    const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetSinistro}/values:batchUpdate`, {
+      method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+      body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: updates }),
+    });
+    const j = await r.json(); if (j.error) throw new Error("gravação (update): " + j.error.message);
+  }
+  if (novos.length) {
+    const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetSinistro}/values/${encodeURIComponent(ABA)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+      method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+      body: JSON.stringify({ values: novos }),
+    });
+    const j = await r.json(); if (j.error) throw new Error("gravação (append): " + j.error.message);
+  }
+  return { ok: true, atualizados: updates.length, criados: novos.length };
+}
+
+export const _internos = { paraIso, isoParaBr, paraNumero, sinais, indexador, acharCol, colLetra, mapProcessoSiga };

@@ -88,8 +88,9 @@
       // avisos
       const avisos = el("div", { id: "avisos" });
       const aviso = (tipo, icone, cor, texto) => { const a = el("div", { class: "aviso " + tipo, role: "note" }); a.append(svgIcone(ICONES[icone], cor, 18), el("p", null, texto)); return a; };
-      avisos.append(aviso("info", "info", "var(--verde-600)",
-        "Visual de demonstração: ao salvar, as alterações ficam guardadas neste navegador e já aparecem nos dashboards. Depois da validação do grupo support, o Salvar passa a enviar direto para o Google Sheets."));
+      avisos.append(aviso("info", "info", "var(--verde-600)", GS.FONTE.live
+        ? "Ao salvar, a Data da Vistoria Inicial vai direto para a planilha (aba BASE VISTORIA INICIAL). O integrador leva o valor para a aba VISTORIA INICIAL na próxima atualização."
+        : "Visual de demonstração: ao salvar, as alterações ficam guardadas neste navegador e já aparecem nos dashboards. Na conexão com o Sheets, o envio é automático."));
       w.append(avisos);
 
       // indicadores
@@ -279,17 +280,24 @@
         const nome = quem.value.trim();
         if (!nome) { quem.classList.add("falta"); quem.focus(); quem.scrollIntoView({ behavior: "smooth", block: "center" }); msg("Escreva seu nome em “Quem está preenchendo” e clique em Salvar de novo.", true); return; }
         const registros = rs.map((r) => ({ protocolo: r.p, campo: r.c, valor: norm(r.v) }));
-        // 1) grava no overlay (dashboards passam a refletir). DEPOIS: POST /api/salvar -> Sheets.
-        await GS.DB.salvarValores(registros);
-        // 2) exporta um JSON das alterações (como no acompanhamento do sinistro)
-        const conteudo = { tipo: "preenchimento-" + chave, versao: 1, quem, salvo_em: agora(), pagina_gerada: dados.gerado.iso,
-          alteracoes: rs.map((r) => ({ protocolo: r.p, campo: r.c, valor: norm(r.v), anterior: r.a, em: r.em })) };
-        conteudo.quem = nome;
-        baixarJson(`preenchimento ${cfg.rotulo} - ${nome.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 40).trim()} - ${agora().slice(0, 10)}.json`, conteudo);
-        // 3) aplica no clone local e limpa o rascunho
+        // grava: ao vivo -> Sheets (/api/salvar); demo -> overlay local
+        const res = await GS.DB.salvarValores(registros);
+        if (res && res.ok === false) {
+          msg("Não consegui gravar no Sheets: " + (res.erro || "erro") + ". As alterações ficaram guardadas neste navegador; tente salvar de novo.", true);
+          return;
+        }
+        // aplica no clone local e limpa o rascunho
         for (const r of registros) { const p = porProt.get(r.protocolo); if (p) p[r.campo] = r.valor; }
         RASC = {}; guardarRasc();
-        msg(`${plural(registros.length, "alteração salva", "alterações salvas")}. Já aparecem nos dashboards (neste navegador) e um arquivo JSON foi baixado. Na conexão com o Sheets, o envio será automático.`);
+        if (GS.FONTE.live) {
+          msg(`${plural(registros.length, "data salva", "datas salvas")} na planilha (aba BASE VISTORIA INICIAL). O integrador leva para a aba VISTORIA INICIAL na próxima atualização.`);
+        } else {
+          const conteudo = { tipo: "preenchimento-" + chave, versao: 1, quem, salvo_em: agora(), pagina_gerada: dados.gerado.iso,
+            alteracoes: rs.map((r) => ({ protocolo: r.p, campo: r.c, valor: norm(r.v), anterior: r.a, em: r.em })) };
+          conteudo.quem = nome;
+          baixarJson(`preenchimento ${cfg.rotulo} - ${nome.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 40).trim()} - ${agora().slice(0, 10)}.json`, conteudo);
+          msg(`${plural(registros.length, "alteração salva", "alterações salvas")}. Já aparecem nos dashboards (neste navegador) e um arquivo JSON foi baixado.`);
+        }
         atualizar();
       });
       function baixarJson(nome, obj) {
