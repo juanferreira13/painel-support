@@ -342,6 +342,34 @@ footer.rodape { background: var(--cinza); color: #e9e8e8; font-size: 12.5px; pad
 footer.rodape .largura { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 footer.rodape b { color: #fff; font-weight: 600; }
 
+/* ----------------------------------------------------------------- faixa de atraso (destaque) */
+.faixa-atraso { margin-top: 14px; }
+.faixa-atraso .fa { display: flex; align-items: center; justify-content: space-between; gap: 14px 20px; flex-wrap: wrap;
+  background: linear-gradient(135deg, #d6433f, #b62f2f); color: #fff; border-radius: 16px; padding: 15px 20px;
+  box-shadow: 0 12px 30px rgba(190, 47, 47, .24); }
+.faixa-atraso .fa-esq { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
+.faixa-atraso .fa-esq > svg { flex: none; margin-top: 2px; }
+.faixa-atraso .fa-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.faixa-atraso .fa-txt b { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.faixa-atraso .fa-txt > span { font-size: 13px; color: rgba(255, 255, 255, .92); }
+.faixa-atraso .fa-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.faixa-atraso .fa-chip { display: inline-flex; align-items: center; gap: 7px; background: rgba(255, 255, 255, .16);
+  border: 1px solid rgba(255, 255, 255, .3); color: #fff; border-radius: 50px; padding: 4px 12px; cursor: pointer; font: 500 12px var(--fonte); }
+.faixa-atraso .fa-chip:hover, .faixa-atraso .fa-chip:focus-visible { background: rgba(255, 255, 255, .28); outline: 2px solid #fff; outline-offset: 1px; }
+.faixa-atraso .fa-chip span { font-variant-numeric: tabular-nums; font-weight: 700; }
+.faixa-atraso .fa-btn { flex: none; background: #fff; color: #b02e2e; border: 0; cursor: pointer; font: 600 13px var(--fonte);
+  padding: 9px 18px; border-radius: 50px 50px 0 50px; white-space: nowrap; }
+.faixa-atraso .fa-btn:hover, .faixa-atraso .fa-btn:focus-visible { background: #fff2f2; outline: 2px solid #fff; outline-offset: 2px; }
+
+/* alternador no canto do cartão (dimensão do regulador / só vidros) */
+.cartao.com-alternar { position: relative; }
+.alternar-dim { position: absolute; top: 16px; right: 18px; display: inline-flex; gap: 4px; background: var(--plano);
+  border: 1px solid var(--linha); border-radius: 50px; padding: 3px; z-index: 1; }
+.alternar-dim button { border: 0; background: transparent; color: var(--tinta-2); cursor: pointer; font: 500 11.5px var(--fonte);
+  padding: 4px 11px; border-radius: 50px; white-space: nowrap; }
+.alternar-dim button.ativo { background: var(--verde); color: var(--tinta); font-weight: 600; }
+.alternar-dim button:hover:not(.ativo), .alternar-dim button:focus-visible { color: var(--tinta); }
+
 /* ----------------------------------------------------------------- responsivo */
 @media (max-width: 1000px) {
   .app { grid-template-columns: 1fr; }
@@ -360,6 +388,10 @@ footer.rodape b { color: #fff; font-weight: 600; }
   .quem-barra { grid-template-columns: 1fr; }
   .processo .estado, .processo .num, .processo .st { width: auto; }
   .hero { padding: 40px 0 44px; }
+  /* alternador passa a fluir acima do título (não sobrepõe) */
+  .cartao.com-alternar { position: static; }
+  .alternar-dim { position: static; margin: 0 0 10px; }
+  .faixa-atraso .fa-btn { width: 100%; text-align: center; }
 }
 @media print {
   .lateral, .filtros, .paginas, .botao, .link, .salvar, #avisos, .quem-barra, .menu-botao, .topo .dir { display: none !important; }

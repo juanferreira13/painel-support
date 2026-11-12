@@ -19,11 +19,28 @@
   };
   const ORDEM_PEND = { "ATRASADO": 0, "PREENCHER": 1, "EM DIA": 2, "CONCLUÍDO": 3 };
   function selo(k) { const s = el("span", { class: "selo" }); s.append(svgIcone(ICONES[PEND[k].icone], PEND[k].cor), el("span", null, PEND[k].rotulo)); return s; }
+  const DIAS_ATRASO_LIVE = 30;   // sem "prazo" nos dados reais: atrasado = dias em aberto acima disto
   function pendencia(p, dados) {
+    if (GS.FONTE.live) {   // dados reais: baseia em status + dias em aberto (não há preenchimento)
+      if (p._concluido) return "CONCLUÍDO";
+      if (p._negado) return "EM DIA";
+      return (p.diasAberto || 0) > DIAS_ATRASO_LIVE ? "ATRASADO" : "EM DIA";
+    }
     const s = norm(p.situacao);
     if (!s) return "PREENCHER";
     if (s === dados.listas.concluido) return "CONCLUÍDO";
     return p.prazo && p.prazo < GS.HOJE ? "ATRASADO" : "EM DIA";
+  }
+  // Atraso unificado (serve o gerencial e os BIs). Reguladores não têm prazo:
+  // conta como atrasado o que segue em aberto há muitos dias (vistoria/regulação parada).
+  const LIMITE_REG_DIAS = 30;
+  function estaAtrasado(p, dados) {
+    if (p.setor === "REGULADORES") {
+      if (norm(p.statusRegulacao) === "Regularizado") return false;
+      if (p.statusSiga === "NEGADO" || p.statusSga === "NEGADO") return false;
+      return (p.diasAberto || 0) >= LIMITE_REG_DIAS;
+    }
+    return pendencia(p, dados) === "ATRASADO";
   }
   const pessoaDe = (p, cfg) => norm(p[cfg.pessoaCampo]) || p.responsavel || "(sem responsável)";
   function valorColuna(p, col, cfg) {
@@ -39,7 +56,7 @@
   const NAV = [
     { itens: [{ rota: "inicio", rotulo: "Início", icone: "inicio" }] },
     { rot: "Dashboards", itens: GS.DASH_ORDEM.map((c) => ({ rota: "dashboard/" + c, rotulo: GS.SETORES[c].rotulo, icone: GS.SETORES[c].icone })) },
-    { rot: "Preenchimento", itens: GS.ORDEM_SETORES.map((c) => ({ rota: "preenchimento/" + c, rotulo: GS.SETORES[c].rotulo, icone: "preencher" })) },
+    { rot: "Preenchimento", itens: GS.ORDEM_PREENCHIMENTO.map((c) => ({ rota: "preenchimento/" + c, rotulo: GS.SETORES[c].rotulo, icone: "preencher" })) },
   ];
 
   function construirShell() {
@@ -54,11 +71,8 @@
         nav.append(a);
       }
     }
-    // selo de fonte no topo
-    const fonte = document.getElementById("selo-fonte");
-    fonte.className = "selo-fonte" + (GS.FONTE.live ? " live" : "");
-    fonte.replaceChildren(el("span", { class: "ponto" }), el("span", null, GS.FONTE.rotulo));
-    document.getElementById("gerado-topo").textContent = GS.GERADO.br;
+    // selo de fonte no topo (atualizado também quando a fonte ao vivo resolve)
+    atualizarSeloFonte();
     // menu mobile
     const abrir = document.getElementById("abrir-menu");
     const fechar = () => document.body.classList.remove("menu-aberto");
@@ -66,6 +80,17 @@
     lateral.querySelector(".fechar-lat").addEventListener("click", fechar);
     document.querySelector(".sombra-menu").addEventListener("click", fechar);
   }
+
+  function atualizarSeloFonte() {
+    const fonte = document.getElementById("selo-fonte");
+    if (fonte) {
+      fonte.className = "selo-fonte" + (GS.FONTE.live ? " live" : "");
+      fonte.replaceChildren(el("span", { class: "ponto" }), el("span", null, GS.FONTE.rotulo));
+    }
+    const g = document.getElementById("gerado-topo");
+    if (g) g.textContent = (GS.GERADO && GS.GERADO.br) || "";
+  }
+  GS.aoMudarFonte = atualizarSeloFonte;   // chamado por dados.js quando a fonte ao vivo resolve
 
   function marcarAtivo(rota) {
     for (const a of document.querySelectorAll(".lateral a.item")) {
@@ -174,9 +199,11 @@
   }
 
   /* tabela por pessoa (analista/regulador/consultor) */
-  function tabelaPessoas(corpo, processos, cfg, colunasDef, estado, aoClicar) {
+  function tabelaPessoas(corpo, processos, cfg, colunasDef, estado, aoClicar, nomeDe, chaveAtiva) {
+    const nome_ = nomeDe || ((p) => pessoaDe(p, cfg));
+    const ativaKey = chaveAtiva || "pessoa";
     const m = new Map();
-    for (const p of processos) { const nome = pessoaDe(p, cfg); (m.get(nome) || m.set(nome, []).get(nome)).push(p); }
+    for (const p of processos) { const nome = nome_(p); (m.get(nome) || m.set(nome, []).get(nome)).push(p); }
     if (!m.size) { corpo.replaceChildren(el("div", { class: "vazio" }, "Nenhum processo com os filtros atuais.")); return; }
     const t = el("table", { class: "dados" });
     const cab = el("tr");
@@ -185,7 +212,7 @@
     const tb = t.appendChild(el("tbody"));
     const linhas = [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], "pt-BR"));
     for (const [nome, g] of linhas) {
-      const tr = el("tr", { tabindex: "0", role: "button", class: estado.pessoa === nome ? "ativa" : "", "aria-label": `${nome}: ${g.length} processos. Filtrar` });
+      const tr = el("tr", { tabindex: "0", role: "button", class: estado[ativaKey] === nome ? "ativa" : "", "aria-label": `${nome}: ${g.length} processos. Filtrar` });
       colunasDef.forEach((cd, i) => {
         if (i === 0) { tr.append(el("td", null, nome)); return; }
         if (cd.prog) {
@@ -205,13 +232,23 @@
     corpo.replaceChildren(t);
   }
 
-  /* barras genéricas por campo */
-  function barrasPorCampo(corpo, processos, campoFn, ordemFixa, aoClicar, estado, ativoChave) {
+  /* barras genéricas por campo. `limite` (sem ordemFixa) mostra o top N e agrupa o resto em "Outras". */
+  function barrasPorCampo(corpo, processos, campoFn, ordemFixa, aoClicar, estado, ativoChave, limite) {
     const n = new Map();
     for (const p of processos) { const k = campoFn(p); n.set(k, (n.get(k) || 0) + 1); }
     let chaves = ordemFixa ? ordemFixa.slice() : [...n.keys()];
     for (const k of n.keys()) if (!chaves.includes(k)) chaves.push(k);
+    let resto = 0;
+    if (limite && !ordemFixa && chaves.length > limite) {
+      chaves.sort((a, b) => (n.get(b) || 0) - (n.get(a) || 0) || String(a).localeCompare(String(b), "pt-BR"));
+      // mantém a chave ativa visível mesmo fora do top
+      const topo = chaves.slice(0, limite);
+      if (estado && estado[ativoChave] && !topo.includes(estado[ativoChave])) topo[limite - 1] = estado[ativoChave];
+      for (const k of chaves) if (!topo.includes(k)) resto += n.get(k) || 0;
+      chaves = topo;
+    }
     const itens = chaves.map((k) => ({ chave: k, nome: k === "" ? "(não preenchido)" : k, valor: n.get(k) || 0, ativa: estado && estado[ativoChave] === k }));
+    if (resto) itens.push({ nome: "Outras", valor: resto });   // sem chave = não clicável
     G.barras(corpo, itens, processos.length, aoClicar);
   }
 
@@ -235,11 +272,12 @@
       campoSelect("fsga", "Status SGA", [["*", "Todos"], ...distintos("statusSga").sort().map((s) => [s, vazio(s)])], estado.fsga);
     } else {
       const listaPessoas = dados.listas[cfg.pessoas] || [];
-      campoSelect("pessoa", cfg.rotulo.replace(/e?s$/, ""), [["", "Todos"], ...listaPessoas.map((p) => [p, p])], estado.pessoa);
+      campoSelect("pessoa", cfg.rotuloPessoa || cfg.rotulo.replace(/e?s$/, ""), [["", "Todos"], ...listaPessoas.map((p) => [p, p])], estado.pessoa);
       if (cfg.modelo === "pendencia") {
         campoSelect("situacao", "Situação", [["*", "Todas"], ["", "(não preenchida)"], ...dados.listas.situacoes.map((s) => [s, s])], estado.situacao);
         campoSelect("pend", "Pendência", [["", "Todas"], ["acao", "Precisam de ação"], ["ATRASADO", "Atrasados"], ["PREENCHER", "A preencher"], ["EM DIA", "Em dia"], ["CONCLUÍDO", "Concluídos"]], estado.pend);
       } else if (cfg.modelo === "regulacao") {
+        campoSelect("reguladorAnalista", "Reg. analista", [["", "Todos"], ...(dados.listas.reguladoresAnalistas || []).map((p) => [p, p])], estado.reguladorAnalista);
         campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
       }
     }
@@ -251,7 +289,8 @@
     busca.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(aoMudar, 180); });
     const limpar = el("button", { class: "botao claro", type: "button" }, "Limpar filtros");
     limpar.addEventListener("click", () => {
-      Object.assign(estado, { pessoa: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null });
+      Object.assign(estado, { pessoa: "", reguladorAnalista: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
+                              evento: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "" });
       const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
       for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
@@ -270,7 +309,7 @@
     } else {
       estado.pessoa = s.pessoa.value;
       if (cfg.modelo === "pendencia") { estado.situacao = s.situacao.value === "*" ? null : s.situacao.value; estado.pend = s.pend.value; }
-      if (cfg.modelo === "regulacao") estado.statusRegulacao = s.statusRegulacao.value;
+      if (cfg.modelo === "regulacao") { estado.statusRegulacao = s.statusRegulacao.value; if (s.reguladorAnalista) estado.reguladorAnalista = s.reguladorAnalista.value; }
     }
     estado.busca = s.busca.value.trim();
   }
@@ -281,6 +320,12 @@
         if (estado.setor && p.setor !== estado.setor) return false;
         if (estado.fsiga !== null && estado.fsiga !== undefined && p.statusSiga !== estado.fsiga) return false;
         if (estado.fsga !== null && estado.fsga !== undefined && p.statusSga !== estado.fsga) return false;
+        if (estado.evento && (p.evento || "") !== estado.evento) return false;
+        if (estado.marca && (p.marca || "") !== estado.marca) return false;
+        if (estado.modelo && (p.modelo || "") !== estado.modelo) return false;
+        if (estado.uf && (p.uf || "") !== estado.uf) return false;
+        if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
+        if (estado.cooperativa && (p.cooperativa || "") !== estado.cooperativa) return false;
       }
       if (estado.pessoa && pessoaDe(p, cfg) !== estado.pessoa) return false;
       if (cfg.modelo === "pendencia") {
@@ -288,7 +333,11 @@
         if (estado.pend === "acao" && !["ATRASADO", "PREENCHER"].includes(pendencia(p, dados))) return false;
         else if (estado.pend && estado.pend !== "acao" && pendencia(p, dados) !== estado.pend) return false;
       }
-      if (cfg.modelo === "regulacao" && estado.statusRegulacao && p.statusRegulacao !== estado.statusRegulacao) return false;
+      if (cfg.modelo === "regulacao") {
+        if (estado.statusRegulacao && p.statusRegulacao !== estado.statusRegulacao) return false;
+        if (estado.reguladorAnalista && norm(p.reguladorAnalista) !== estado.reguladorAnalista) return false;
+      }
+      if (estado.soAtrasados && !estaAtrasado(p, dados)) return false;
       if (termo) {
         const alvo = GS.semAcento([p.protocoloSiga, p.protocoloSga, p.nome, p.placaSiga, (p.placaSiga || "").replace("-", "")].join(" "));
         if (!alvo.includes(termo)) return false;
@@ -298,8 +347,10 @@
   }
 
   /* ===================================================== INÍCIO (hero) */
-  function renderInicio(mount) {
+  async function renderInicio(mount) {
     trilha(["Sinistro", "Início"]);
+    mount.replaceChildren(carregando());
+    await GS.DB.garantir();
     const r = GS.DB.resumo();
     const hero = el("section", { class: "hero" });
     const hw = el("div", { class: "largura" });
@@ -308,7 +359,7 @@
     const p = el("p", { class: "lede" }, "Dashboards e preenchimento dos setores de analistas, reguladores e consultores — no mesmo padrão visual da conferência e do acompanhamento, integrados em uma única página.");
     const acoes = el("div", { class: "acoes" });
     const b1 = el("a", { class: "btn-hero cheio", href: "#/dashboard/sinistro" }); b1.append(el("span", null, "Ver dashboards"), svgIcone(ICONES.seta, "#2d350a", 16));
-    const b2 = el("a", { class: "btn-hero vazado", href: "#/preenchimento/analistas" }, "Ir para o preenchimento");
+    const b2 = el("a", { class: "btn-hero vazado", href: "#/preenchimento/reguladores" }, "Ir para o preenchimento");
     acoes.append(b1, b2);
     const nums = el("div", { class: "hero-nums" });
     const cel = (v, t) => { const n = el("div", { class: "n" }); n.append(el("b", null, v), el("span", null, t)); return n; };
@@ -331,7 +382,8 @@
     for (const chave of GS.ORDEM_SETORES) {
       const cfg = GS.SETORES[chave];
       cartoes.push({ rota: "dashboard/" + chave, icone: cfg.icone, titulo: "Dashboard · " + cfg.rotulo, desc: cfg.ledeDash, tags: ["Indicadores", "Gráficos", "Lista"] });
-      cartoes.push({ rota: "preenchimento/" + chave, icone: "preencher", titulo: "Preenchimento · " + cfg.rotulo, desc: cfg.ledeForm, tags: ["Editar", "Salvar", "Sheets (em breve)"] });
+      if (GS.ORDEM_PREENCHIMENTO.includes(chave))
+        cartoes.push({ rota: "preenchimento/" + chave, icone: "preencher", titulo: "Preenchimento · " + cfg.rotulo, desc: cfg.ledeForm, tags: ["Vistoria inicial", "Salvar", GS.FONTE.live ? "Sheets ao vivo" : "Sheets (em breve)"] });
     }
     for (const c of cartoes) {
       const a = el("a", { class: "cartao-nav", href: "#/" + c.rota });
@@ -345,17 +397,57 @@
     mount.replaceChildren(hero, sec);
   }
 
+  /* faixa de destaque dos atrasados (gerencial: acusa o setor; BIs: conta do setor) */
+  function faixaAtraso(dados, cfg, estado, atualizar) {
+    const atrasados = dados.processos.filter((p) => estaAtrasado(p, dados));
+    if (!atrasados.length) return null;
+    const faixa = el("section", { class: "faixa-atraso", role: "alert" });
+    const w = el("div", { class: "largura fa" });
+    const esq = el("div", { class: "fa-esq" });
+    esq.append(svgIcone(ICONES.atraso, "#fff", 22));
+    const txt = el("div", { class: "fa-txt" });
+    const btn = el("button", { type: "button", class: "fa-btn" });
+    const rotBtn = () => { btn.textContent = estado.soAtrasados ? "Tirar filtro" : "Ver só atrasados"; btn.setAttribute("aria-pressed", String(!!estado.soAtrasados)); };
+    const n = atrasados.length, plr = n === 1 ? "processo atrasado" : "processos atrasados";
+    if (cfg.modelo === "geral") {
+      const porSetor = new Map();
+      for (const p of atrasados) porSetor.set(p.setor, (porSetor.get(p.setor) || 0) + 1);
+      const top = [...porSetor.entries()].sort((a, b) => b[1] - a[1]);
+      txt.append(el("b", null, `${nf.format(n)} ${plr}`),
+                 el("span", null, `Setor mais crítico: ${top[0][0]} (${nf.format(top[0][1])}). Bom cobrar os responsáveis.`));
+      const chips = el("div", { class: "fa-chips" });
+      for (const [s, q] of top) {
+        const c = el("button", { type: "button", class: "fa-chip", "aria-label": `${s}: ${q} atrasados. Filtrar` });
+        c.append(el("b", null, s), el("span", null, nf.format(q)));
+        aoAtivar(c, () => { estado.setor = s; estado.soAtrasados = true; if (estado._selects && estado._selects.setor) estado._selects.setor.value = s; rotBtn(); atualizar(); });
+        chips.append(c);
+      }
+      txt.append(chips);
+    } else {
+      txt.append(el("b", null, `${nf.format(n)} ${plr} neste setor`),
+                 el("span", null, "Precisam de ação imediata — destaque para cobrança."));
+    }
+    esq.append(txt);
+    rotBtn();
+    btn.addEventListener("click", () => { estado.soAtrasados = !estado.soAtrasados; rotBtn(); atualizar(); });
+    w.append(esq, btn); faixa.append(w);
+    return faixa;
+  }
+
   /* ===================================================== DASHBOARD */
   async function renderDashboard(chave, mount) {
     const cfg = GS.SETORES[chave];
     trilha(["Sinistro", "Dashboards", cfg.rotulo]);
     mount.replaceChildren(carregando());
     const dados = await GS.DB.carregar(chave);
-    const estado = { pessoa: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null };
+    const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
+                     evento: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", vidrosMarca: false, vidrosModelo: false };
 
     mount.replaceChildren();
     mount.append(abertura(cfg, cfg.tituloDash, cfg.ledeDash));
     const fil = construirFiltros(cfg, dados, estado, () => { lerFiltros(estado, cfg); atualizar(); });
+    const faixa = faixaAtraso(dados, cfg, estado, () => atualizar());
+    if (faixa) mount.append(faixa);
     mount.append(fil);
     const area = el("div", { class: "conteudo-sec" });
     const w = el("div", { class: "largura" });
@@ -369,20 +461,54 @@
     const cards = {};
     if (cfg.modelo === "pendencia") {
       cards.pessoas = cartao("sete", "Por " + cfg.rotulo.replace(/e?s$/, "").toLowerCase(), "Clique em uma linha para filtrar.");
-      cards.situacao = cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
+      cards.situacao = GS.FONTE.live
+        ? cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA.")
+        : cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
       grade.append(cards.situacao.c, cards.pessoas.c);
       if (cfg.temOficinas) { cards.oficinas = cartao("", "Rede de oficinas", "Oficinas homologadas, com vagas e consultor responsável."); grade.append(cards.oficinas.c); }
     } else if (cfg.modelo === "regulacao") {
       cards.status = cartao("cinco", "Por status da regulação", "Situação de cada processo. Clique para filtrar.");
-      cards.pessoas = cartao("sete", "Por regulador", "Clique em uma linha para filtrar.");
+      cards.pessoas = cartao("sete", "Por regulador", "Orçamentista (vistoria/orçamento) ou analista (ID externo). Clique em uma linha para filtrar.");
+      // alternador de dimensão: orçamentista × analista
+      const dimTog = el("div", { class: "alternar-dim", role: "group", "aria-label": "Dimensão do regulador" });
+      const btnOrc = el("button", { type: "button", class: "ativo", "data-dim": "orcamentista" }, "Orçamentista");
+      const btnAna = el("button", { type: "button", "data-dim": "analista" }, "Analista");
+      dimTog.append(btnOrc, btnAna);
+      for (const b of [btnOrc, btnAna]) b.addEventListener("click", () => {
+        if (estado.regDim === b.dataset.dim) return;
+        estado.regDim = b.dataset.dim;
+        btnOrc.classList.toggle("ativo", estado.regDim === "orcamentista");
+        btnAna.classList.toggle("ativo", estado.regDim === "analista");
+        atualizar();
+      });
+      cards.pessoas.c.classList.add("com-alternar");
+      cards.pessoas.c.insertBefore(dimTog, cards.pessoas.c.firstChild);
       grade.append(cards.status.c, cards.pessoas.c);
       if (cfg.temMatriz) { cards.matriz = cartao("", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
     } else { // geral (sinistro)
       cards.mes = cartao("sete", "Eventos por mês", "Pela competência do evento.");
       cards.setor = cartao("cinco", "Por setor", "Distribuição dos eventos entre os setores. Clique para filtrar.");
+      cards.evento = cartao("cinco", "Por evento", "Tipo de evento do sinistro. Clique para filtrar.");
+      cards.marca = cartao("cinco", "Por marca do veículo", "Clique para filtrar.");
+      cards.modelo = cartao("cinco", "Por modelo do veículo", "Clique para filtrar.");
+      cards.estado = cartao("cinco", "Por estado (UF)", "Distribuição por UF. Clique para filtrar.");
+      cards.cidade = cartao("sete", "Por cidade", "Principais cidades. Clique para filtrar.");
+      cards.coop = cartao("cinco", "Por cooperativa", "Distribuição por cooperativa. Clique para filtrar.");
       cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação. Clique em uma célula para filtrar.");
       cards.motivos = cartao("cinco", "Motivos de negativa", "Classificação dos eventos negados no SIGA ou no SGA.");
-      grade.append(cards.mes.c, cards.setor.c, cards.matriz.c, cards.motivos.c);
+      // toggle "Só vidros" nos cartões de marca e modelo
+      togglVidros(cards.marca.c, "vidrosMarca");
+      togglVidros(cards.modelo.c, "vidrosModelo");
+      grade.append(cards.mes.c, cards.setor.c, cards.evento.c, cards.marca.c, cards.modelo.c,
+                   cards.estado.c, cards.cidade.c, cards.coop.c, cards.matriz.c, cards.motivos.c);
+    }
+    function togglVidros(card, chave) {
+      const t = el("div", { class: "alternar-dim", role: "group", "aria-label": "Filtrar por vidros" });
+      const b = el("button", { type: "button", "data-chave": chave }, "Só vidros");
+      t.append(b);
+      b.addEventListener("click", () => { estado[chave] = !estado[chave]; b.classList.toggle("ativo", estado[chave]); atualizar(); });
+      card.classList.add("com-alternar");
+      card.insertBefore(t, card.firstChild);
     }
     const listaCard = { c: el("section", { class: "cartao" }), corpo: el("div") };
     const exportar = el("button", { class: "botao", type: "button" }, "Exportar CSV");
@@ -398,18 +524,38 @@
       resumo.replaceChildren(...indicadores(linhas, cfg, dados, estado, atualizar));
       // gráficos
       if (cfg.modelo === "pendencia") {
-        barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
+        if (GS.FONTE.live)
+          barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.statusSga), null, null, estado, "_semfiltro", 10);
+        else
+          barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
         if (cards.oficinas) oficinasTabela(cards.oficinas.corpo);
       } else if (cfg.modelo === "regulacao") {
         barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusRegulacao || "", dados.listas.statusReg.slice(), (k) => { estado.statusRegulacao = estado.statusRegulacao === k ? "" : k; sincFiltros(); atualizar(); }, estado, "statusRegulacao");
-        tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaReg(cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
+        const dimAna = estado.regDim === "analista";
+        const nomeDe = dimAna ? (p) => norm(p.reguladorAnalista) || "(sem analista)" : null;
+        tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaReg(cfg, dimAna ? "Reg. analista" : "Reg. orçamentista"), estado, (nome) => {
+          if (dimAna) estado.reguladorAnalista = (estado.reguladorAnalista === nome || nome === "(sem analista)") ? "" : nome;
+          else estado.pessoa = estado.pessoa === nome ? "" : nome;
+          sincFiltros(); atualizar();
+        }, nomeDe, dimAna ? "reguladorAnalista" : "pessoa");
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
       } else { // geral (sinistro)
         const eixo = [...new Set(linhas.map((p) => p.competencia))].sort();
         const conta = new Map(); for (const p of linhas) conta.set(p.competencia, (conta.get(p.competencia) || 0) + 1);
         G.colunasMes(cards.mes.corpo, eixo, conta, (k) => [mesRotulo(k)]);
         barrasPorCampo(cards.setor.corpo, linhas, (p) => p.setor, (dados.listas.setores || []).slice(), (k) => { estado.setor = estado.setor === k ? "" : k; sincFiltros(); atualizar(); }, estado, "setor");
+        const togFiltro = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; atualizar(); };
+        barrasPorCampo(cards.evento.corpo, linhas, (p) => p.evento || "", (dados.listas.eventos || []).slice(), togFiltro("evento"), estado, "evento");
+        // marca e modelo com opção "só vidros"
+        const soVidros = (p) => p.evento === "VIDROS" || p.setor === "VIDROS";
+        const linhasMarca = estado.vidrosMarca ? linhas.filter(soVidros) : linhas;
+        const linhasModelo = estado.vidrosModelo ? linhas.filter(soVidros) : linhas;
+        barrasPorCampo(cards.marca.corpo, linhasMarca, (p) => p.marca || "", (dados.listas.marcas || []).slice(), togFiltro("marca"), estado, "marca");
+        barrasPorCampo(cards.modelo.corpo, linhasModelo, (p) => p.modelo || "", null, togFiltro("modelo"), estado, "modelo", 12);
+        barrasPorCampo(cards.estado.corpo, linhas, (p) => p.uf || "", null, togFiltro("uf"), estado, "uf", 14);
+        barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, togFiltro("cidade"), estado, "cidade", 12);
+        barrasPorCampo(cards.coop.corpo, linhas, (p) => p.cooperativa || "", (dados.listas.cooperativas || []).slice(), togFiltro("cooperativa"), estado, "cooperativa");
         G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         motivosNegativa(cards.motivos.corpo, linhas);
       }
@@ -423,6 +569,7 @@
     function sincFiltros() {
       const s = estado._selects; if (!s) return;
       if (s.pessoa) s.pessoa.value = estado.pessoa;
+      if (s.reguladorAnalista) s.reguladorAnalista.value = estado.reguladorAnalista;
       if (s.situacao) s.situacao.value = estado.situacao === null ? "*" : estado.situacao;
       if (s.statusRegulacao) s.statusRegulacao.value = estado.statusRegulacao;
       if (s.setor) s.setor.value = estado.setor;
@@ -438,7 +585,7 @@
       for (const p of linhas) n[pendencia(p, dados)]++;
       const total = linhas.length;
       const itens = [indicadorFixo("Processos", nf.format(total), cfg.aba, cfg.icone)];
-      for (const k of ["PREENCHER", "ATRASADO", "EM DIA", "CONCLUÍDO"]) {
+      for (const k of (GS.FONTE.live ? ["ATRASADO", "EM DIA", "CONCLUÍDO"] : ["PREENCHER", "ATRASADO", "EM DIA", "CONCLUÍDO"])) {
         const ativo = estado.pend === k;
         const b = el("button", { type: "button", class: "indicador" + (ativo ? " ativo" : ""), "aria-pressed": String(ativo) });
         const r = el("div", { class: "rotulo" }); r.append(svgIcone(ICONES[PEND[k].icone], PEND[k].cor, 15), el("span", null, PEND[k].plural));
@@ -488,10 +635,10 @@
       { rot: "Preenchido", prog: (g) => [g.filter((p) => pendencia(p, dados) !== "PREENCHER").length, g.length] },
     ];
   }
-  function colsPessoaReg(cfg) {
+  function colsPessoaReg(cfg, rotulo) {
     const c = (s) => (g) => g.filter((p) => p.statusRegulacao === s).length;
     return [
-      { rot: singular(cfg), valor: () => 0 },
+      { rot: rotulo || singular(cfg), valor: () => 0 },
       { rot: "Processos", valor: (g) => g.length },
       { rot: "Em regulação", valor: c("Em regulação") },
       { rot: "Regularizados", valor: c("Regularizado") },
@@ -554,7 +701,8 @@
     const mount = document.getElementById("conteudo");
     const [sec, chave] = rota.split("/");
     if (sec === "dashboard" && GS.SETORES[chave]) renderDashboard(chave, mount);
-    else if (sec === "preenchimento" && GS.SETORES[chave]) renderPreenchimento(chave, mount);
+    else if (sec === "preenchimento" && GS.ORDEM_PREENCHIMENTO.includes(chave)) renderPreenchimento(chave, mount);
+    else if (sec === "preenchimento" && GS.SETORES[chave]) { location.replace("#/dashboard/" + chave); }  // preenchimento desativado p/ este setor
     else renderInicio(mount);
   }
 

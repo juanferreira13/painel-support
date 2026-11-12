@@ -207,7 +207,7 @@
         const info = el("div", { class: "info" });
         const estadoDiv = el("div", { class: "estado" }); estadoDiv.append(el("span", { class: "selo" }), el("span", { class: "marca-salv" }));
         const num = el("div", { class: "num" });
-        num.append(el("b", null, p.protocoloSiga), el("span", { class: "sec" }, p.protocoloSga ? "SGA " + p.protocoloSga : "sem protocolo SGA"));
+        num.append(el("b", null, p.protocoloSiga), el("span", { class: "sec" }, p.protocoloSga ? "SIGA · SGA " + p.protocoloSga : "SIGA · sem protocolo SGA"));
         if (p.setor === "VIDROS") num.append(el("span", { class: "tag" }, "Vidros"));
         const assoc = el("div", { class: "assoc" });
         assoc.append(el("b", null, p.nome || "(sem nome)"), el("span", { class: "sec" }, [p.placaSiga, p.cobertura].filter(Boolean).join(" · ")));

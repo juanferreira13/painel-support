@@ -55,8 +55,25 @@
   const STATUS_REG = ["Em regulação", "Aguardando vistoria", "Regularizado", "Negado", "Em análise de negativa"];
 
   const ANALISTAS = ["Ana Martins", "Bruno Costa", "Carla Souza", "Diego Lima", "Fernanda Rocha", "Gustavo Alves", "Patrícia Nunes", "Rafael Dias"];
-  const REGULADORES = ["Helena Prado", "Igor Mendes", "Juliana Reis", "Nelson Faria", "Sabrina Melo", "Thiago Barros"];
+  const REGULADORES = ["Helena Prado", "Igor Mendes", "Juliana Reis", "Nelson Faria", "Sabrina Melo", "Thiago Barros"];      // orçamentistas
+  const REG_ANALISTAS = ["Marcos Vinícius", "Tânia Lopes", "Priscila Amaral", "Otávio Brandão", "Renata Vilela"];           // reguladores analistas (ID EXTERNO)
   const CONSULTORES = ["Caio Ferreira", "Débora Ramos", "Felipe Araújo", "Larissa Gomes", "Wagner Pinto"];
+
+  // veículos (marca -> modelos), eventos e cooperativas — alimentam os gráficos do gerencial
+  const VEICULOS = [
+    ["FIAT", ["Argo", "Mobi", "Strada", "Toro", "Cronos", "Uno", "Pulse"]],
+    ["VOLKSWAGEN", ["Gol", "Polo", "T-Cross", "Nivus", "Virtus", "Saveiro"]],
+    ["CHEVROLET", ["Onix", "Onix Plus", "Tracker", "S10", "Spin", "Montana"]],
+    ["FORD", ["Ka", "Ranger", "EcoSport"]],
+    ["HYUNDAI", ["HB20", "Creta", "HB20S"]],
+    ["TOYOTA", ["Corolla", "Hilux", "Yaris", "Corolla Cross"]],
+    ["HONDA", ["Civic", "HR-V", "Fit", "City"]],
+    ["RENAULT", ["Kwid", "Sandero", "Duster", "Logan"]],
+    ["JEEP", ["Renegade", "Compass"]],
+    ["NISSAN", ["Kicks", "Versa"]],
+  ];
+  const EVENTOS_NV = ["COLISÃO", "AVARIA", "FURTO/ROUBO", "TERCEIROS", "INCÊNDIO", "FENÔMENOS NATURAIS", "PEQUENOS REPAROS", "GUINCHO", "PERDA TOTAL"];
+  const COOPERATIVAS = ["Coop. Central", "Coop. Sul", "Coop. Norte", "Coop. Leste", "Coop. Oeste", "Coop. Vale", "Coop. Litoral"];
 
   const pessoaNome = () => `${escolha(NOMES)} ${escolha(SOBRENOMES)}`;
   const placa = () => {
@@ -86,17 +103,23 @@
     if (chance(0.55) && statusSga) statusSga = statusSiga === "NEGADO" ? "NEGADO" : (statusSiga === "AUTORIZADO" ? "AUTORIZADO" : statusSga);
     const negado = statusSiga === "NEGADO" || statusSga === "NEGADO";
     const num = "SIG-" + (++contador);
+    const [marca, modelos] = escolha(VEICULOS);
     const p = {
       setor,
       protocoloSiga: num,
       protocoloSga: chance(0.1) ? "" : "SGA-" + inteiro(100000, 999999),
       nome: pessoaNome(),
       cobertura: escolha(COBERTURAS),
+      evento: setor === "VIDROS" ? "VIDROS" : escolha(EVENTOS_NV),
+      marca,
+      modelo: escolha(modelos),
+      cooperativa: escolha(COOPERATIVAS),
       placaSiga: placa(),
       abertura,
       diasAberto,
       competencia: competencia(abertura),
       responsavel: setor === "REGULADORES" ? escolha(REGULADORES) : setor === "CONSULTORES" ? escolha(CONSULTORES) : escolha(ANALISTAS),
+      reguladorAnalista: setor === "REGULADORES" ? (chance(0.18) ? "" : escolha(REG_ANALISTAS)) : "",
       cidade, uf,
       dataComunicado: chance(0.9) ? dataEntre(diasAberto, Math.max(0, diasAberto - 3)) : "",
       dataAutorizado: statusSiga === "AUTORIZADO" || statusSiga === "LIBERADO" ? dataEntre(Math.max(1, diasAberto - 5)) : "",
@@ -194,36 +217,63 @@
     return p;
   }
 
+  const LISTAS_DEMO = { analistas: ANALISTAS, reguladores: REGULADORES, reguladoresAnalistas: REG_ANALISTAS, consultores: CONSULTORES, situacoes: SITUACOES,
+    concluido: CONCLUIDO, statusReg: STATUS_REG, oficinas: OFICINAS_TAB,
+    marcas: VEICULOS.map((v) => v[0]), eventos: ["VIDROS", ...EVENTOS_NV], cooperativas: COOPERATIVAS,
+    setores: ["ANALISTAS", "VIDROS", "REGULADORES", "CONSULTORES"] };
+
+  // Fonte ao vivo: /api/dados lê o Google Sheets (conta de serviço). Sem /api
+  // configurado (ou offline), cai para os dados de demonstração — as telas não mudam.
+  let LIVE = null;          // {processos, listas, gerado} = ao vivo; false = demo; null = ainda não decidido
+  let promessaFonte = null;
+  function garantirFonte() {
+    if (LIVE !== null) return Promise.resolve(LIVE);
+    if (promessaFonte) return promessaFonte;
+    promessaFonte = (async () => {
+      try {
+        const r = await fetch("/api/dados?setor=sinistro", { headers: { accept: "application/json" } });
+        if (!r.ok) throw new Error("http " + r.status);
+        const j = await r.json();
+        if (!j || j.configurado === false || !Array.isArray(j.processos)) throw new Error("sem dados ao vivo");
+        LIVE = { processos: j.processos, listas: Object.assign({}, LISTAS_DEMO, j.listas || {}), gerado: j.gerado || GS.GERADO };
+        GS.FONTE = j.fonte || { tipo: "sheets", rotulo: "Dados ao vivo (Sheets)", live: true };
+        if (j.gerado) GS.GERADO = j.gerado;
+        GS.DB.listas = LIVE.listas;
+        if (typeof GS.aoMudarFonte === "function") GS.aoMudarFonte();
+      } catch (_) {
+        LIVE = false;         // mantém o demo
+      }
+      return LIVE;
+    })();
+    return promessaFonte;
+  }
+
   GS.DB = {
     fonte: GS.FONTE,
-    listas: { analistas: ANALISTAS, reguladores: REGULADORES, consultores: CONSULTORES, situacoes: SITUACOES,
-              concluido: CONCLUIDO, statusReg: STATUS_REG, oficinas: OFICINAS_TAB,
-              setores: ["ANALISTAS", "VIDROS", "REGULADORES", "CONSULTORES"] },
-    // Assíncrono de propósito: amanhã vira fetch('/api/dados?setor='+chave) sem mudar as telas.
-    carregar(chave) {
-      return new Promise((ok) => {
-        const filtro = GRUPOS[chave] || (() => true);
-        const overlay = lerOverlay();
-        // clona para a tela poder marcar edições sem tocar na base
-        const processos = BASE.filter(filtro).map((p) => aplicarOverlay(Object.assign({}, p), overlay));
-        ok({ chave, processos, gerado: GS.GERADO, fonte: GS.FONTE, listas: GS.DB.listas });
-      });
+    listas: LISTAS_DEMO,
+    garantir: garantirFonte,
+    async carregar(chave) {
+      const live = await garantirFonte();
+      const filtro = GRUPOS[chave] || (() => true);
+      const overlay = lerOverlay();
+      const fonte = live ? live.processos : BASE;
+      const processos = fonte.filter(filtro).map((p) => aplicarOverlay(Object.assign({}, p), overlay));
+      return { chave, processos, gerado: GS.GERADO, fonte: GS.FONTE, listas: GS.DB.listas };
     },
-    // Grava valores salvos no overlay. registros = [{protocolo, campo, valor}].
-    // DEPOIS: vira fetch('/api/salvar', {method:'POST', body: ...}) para o Sheets.
+    // Grava valores do preenchimento no overlay (localStorage). Fase 2: POST /api/salvar -> Sheets.
     salvarValores(registros) {
       const o = lerOverlay();
       for (const r of registros) { (o[r.protocolo] = o[r.protocolo] || {})[r.campo] = r.valor; }
       try { localStorage.setItem(CHAVE_VALORES, JSON.stringify(o)); } catch (_) { /* sem persistência */ }
       return Promise.resolve({ ok: true, total: registros.length });
     },
-    // Resumo para o hero (contagens gerais), já com o overlay salvo aplicado.
+    // Resumo para o hero. Chame depois de garantir() (o início aguarda a fonte).
     resumo() {
       const overlay = lerOverlay();
-      const lista = BASE.map((p) => aplicarOverlay(Object.assign({}, p), overlay));
+      const lista = (LIVE ? LIVE.processos : BASE).map((p) => aplicarOverlay(Object.assign({}, p), overlay));
       const total = lista.length;
       const porSetor = { analistas: lista.filter(GRUPOS.analistas).length, reguladores: lista.filter(GRUPOS.reguladores).length, consultores: lista.filter(GRUPOS.consultores).length };
-      const aPreencher = lista.filter((p) => GRUPOS.analistas(p) || GRUPOS.consultores(p)).filter((p) => !GS.norm(p.situacao)).length;
+      const aPreencher = LIVE ? 0 : lista.filter((p) => GRUPOS.analistas(p) || GRUPOS.consultores(p)).filter((p) => !GS.norm(p.situacao)).length;
       const negados = lista.filter((p) => p.statusSiga === "NEGADO" || p.statusSga === "NEGADO").length;
       return { total, porSetor, aPreencher, negados };
     },

@@ -25,7 +25,8 @@
       ledeDash: "Visão geral de todos os eventos do sinistro, lado a lado com a situação no SIGA e no SGA. Os três setores — analistas, reguladores e consultores — saem daqui.",
       modelo: "geral",
       colunas: [
-        { rot: "Protocolo", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SIGA", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SGA", key: "protocoloSga", classe: "fixo" },
         { rot: "Setor", key: "setor", classe: "fixo" },
         { rot: "Nome", key: "nome" },
         { rot: "Placa", key: "placaSiga", classe: "fixo" },
@@ -60,7 +61,8 @@
         { id: "obs", rot: "Observação", tipo: "textarea", largo: true, ph: "Anotações do processo" },
       ],
       colunas: [
-        { rot: "Protocolo", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SIGA", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SGA", key: "protocoloSga", classe: "fixo" },
         { rot: "Nome", key: "nome" },
         { rot: "Placa", key: "placaSiga", classe: "fixo" },
         { rot: "Cobertura", key: "cobertura", classe: "fixo" },
@@ -79,26 +81,31 @@
       tituloDash: "Dashboard dos reguladores",
       tituloForm: "Preenchimento — Reguladores",
       aba: "REGULADORES / VISTORIA INICIAL",
-      ledeDash: "Processos do setor REGULADORES: regulação de sinistros, vistoria inicial e negativas. Acompanhe o que está em regulação, o que foi regularizado e os negados em aberto.",
-      ledeForm: "Informe quem regularizou, a data da regulagem e o mês de referência de cada processo. O que você muda fica marcado como não salvo até enviar.",
+      ledeDash: "Processos do setor REGULADORES: regulação de sinistros, vistoria inicial e negativas. Acompanhe por regulador orçamentista e regulador analista, o que está em regulação, o que foi regularizado e os negados em aberto.",
+      ledeForm: "Informe quem regularizou, a data da vistoria inicial e o mês de referência de cada processo. O que você muda fica marcado como não salvo até enviar.",
       pessoas: "reguladores",
       modelo: "regulacao",       // usa statusRegulacao
-      pessoaCampo: "responsavel",
+      pessoaCampo: "responsavel",            // regulador orçamentista (quem fez a vistoria/orçamento)
+      rotuloPessoa: "Reg. orçamentista",
+      analistaCampo: "reguladorAnalista",    // regulador analista (casado por ID EXTERNO no integrador)
       temMatriz: true,
+      // único setor que mantém preenchimento (os demais atualizam só o SGA).
+      // Mantém: Regularizado por, Status, Data da VISTORIA INICIAL (não existe no SGA) e Mês ref.
       campos: [
         { id: "regularizadoPor", rot: "Regularizado por", tipo: "select", fonte: "reguladores", vazio: "Não informado" },
         { id: "statusRegulacao", rot: "Status da regulação", tipo: "select", fonte: "statusReg", vazio: "Escolha o status" },
-        { id: "dataRegulagem", rot: "Data da regulagem", tipo: "date" },
+        { id: "dataRegulagem", rot: "Data da vistoria inicial", tipo: "date" },
         { id: "mesReferencia", rot: "Mês referência", tipo: "text", ph: "MM/AAAA" },
-        { id: "obs", rot: "Observação", tipo: "textarea", largo: true, ph: "Anotações da regulação" },
       ],
       colunas: [
-        { rot: "Protocolo", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SIGA", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SGA", key: "protocoloSga", classe: "fixo" },
         { rot: "Nome", key: "nome" },
         { rot: "Placa", key: "placaSiga", classe: "fixo" },
-        { rot: "Regulador", key: "responsavel" },
+        { rot: "Reg. orçamentista", key: "responsavel" },
+        { rot: "Reg. analista", key: "reguladorAnalista" },
         { rot: "Status regulação", key: "statusRegulacao" },
-        { rot: "Regularizado por", key: "regularizadoPor" },
+        { rot: "Vistoria inicial", key: "dataRegulagem", classe: "fixo", tipo: "data" },
         { rot: "Mês ref.", key: "mesReferencia", classe: "fixo" },
         COL_DIAS, COL_SIGA, COL_SGA,
       ],
@@ -126,7 +133,8 @@
         { id: "obs", rot: "Observação", tipo: "textarea", largo: true, ph: "Anotações do processo" },
       ],
       colunas: [
-        { rot: "Protocolo", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SIGA", key: "protocoloSiga", classe: "fixo" },
+        { rot: "Protocolo SGA", key: "protocoloSga", classe: "fixo" },
         { rot: "Nome", key: "nome" },
         { rot: "Placa", key: "placaSiga", classe: "fixo" },
         { rot: "Oficina", key: "oficina" },
@@ -138,6 +146,7 @@
     },
   };
 
-  GS.ORDEM_SETORES = ["analistas", "reguladores", "consultores"];   // têm preenchimento
+  GS.ORDEM_SETORES = ["analistas", "reguladores", "consultores"];        // setores com dashboard de equipe
+  GS.ORDEM_PREENCHIMENTO = ["reguladores"];                              // único com preenchimento (resto só no SGA)
   GS.DASH_ORDEM = ["sinistro", "analistas", "reguladores", "consultores"];   // ordem dos dashboards
 })();
