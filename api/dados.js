@@ -7,6 +7,8 @@
  * ------------------------------------------------------------------------- */
 import { carregarTudo } from "./_core.js";
 
+export const maxDuration = 30;   // Vercel: dá folga pra leitura do Sheets (evita cair no demo por timeout)
+
 const FONTE = { tipo: "sheets", rotulo: "Dados ao vivo (Sheets)", live: true };
 const GRUPOS = {
   sinistro: () => true,

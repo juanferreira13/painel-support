@@ -169,8 +169,15 @@ export async function carregarTudo(cfg) {
   const { saJson, sheetSinistro, sheetReguladores } = cfg;
   const token = await obterToken(saJson);
 
+  // Lê as abas necessárias EM PARALELO (corta a latência e evita timeout da função na Vercel).
+  const [siga, baseAna, baseVis, reg] = await Promise.all([
+    lerAba(token, sheetSinistro, "SIGA"),
+    lerAba(token, sheetSinistro, "BASE REGULADOR ANALISTA").catch(() => []),
+    lerAba(token, sheetSinistro, "BASE VISTORIA INICIAL").catch(() => []),
+    sheetReguladores ? lerAba(token, sheetReguladores, "REGULADORES").catch(() => []) : Promise.resolve([]),
+  ]);
+
   // Gerencial / analistas / consultores: aba SIGA (todos os sinistros)
-  const siga = await lerAba(token, sheetSinistro, "SIGA");
   const getSiga = indexador(siga[0] || []);
   const gerais = siga.slice(1)
     .map((linha) => mapProcessoSiga((...nomes) => getSiga(linha, ...nomes)))
@@ -178,38 +185,28 @@ export async function carregarTudo(cfg) {
 
   // BASE REGULADOR ANALISTA (NUMERO -> REGULADOR ANALISTA): casa o analista por protocolo
   const baseAnalista = new Map();
-  try {
-    const base = await lerAba(token, sheetSinistro, "BASE REGULADOR ANALISTA");
-    const getB = indexador(base[0] || []);
-    for (const linha of base.slice(1)) {
+  { const getB = indexador(baseAna[0] || []);
+    for (const linha of baseAna.slice(1)) {
       const num = norm(getB(linha, "NUMERO", "ID EXTERNO", "PROTOCOLO"));
       const an = trim(getB(linha, "REGULADOR ANALISTA"));
       if (num && an) baseAnalista.set(num, an);
-    }
-  } catch (_) { /* aba opcional */ }
+    } }
   const analistaDe = (p) => baseAnalista.get(norm(p.protocoloSga)) || baseAnalista.get(norm(p.protocoloSiga)) || "";
 
   // BASE VISTORIA INICIAL (NUMERO = PROTOCOLO SIGA -> DATA DA ANALISE): data da vistoria inicial
   const baseVistoria = new Map();
-  try {
-    const bv = await lerAba(token, sheetSinistro, "BASE VISTORIA INICIAL");
-    const getV = indexador(bv[0] || []);
-    for (const linha of bv.slice(1)) {
+  { const getV = indexador(baseVis[0] || []);
+    for (const linha of baseVis.slice(1)) {
       const num = norm(getV(linha, "NUMERO", "PROTOCOLO SIGA", "PROTOCOLO"));
       const dt = paraIso(getV(linha, "DATA DA ANALISE", "DATA DA REGULAGEM", "DATA"));
       if (num && dt) baseVistoria.set(num, dt);
-    }
-  } catch (_) { /* aba opcional */ }
+    } }
   const vistoriaDe = (p) => baseVistoria.get(norm(p.protocoloSiga)) || "";
 
   // Reguladores: aba REGULADORES (tem REGULADOR ANALISTA e REGULADOR SGA)
-  let reguladores = [];
-  if (sheetReguladores) {
-    const reg = await lerAba(token, sheetReguladores, "REGULADORES");
-    const getReg = indexador(reg[0] || []);
-    reguladores = reg.slice(1).map((linha) => mapProcessoRegulador((...nomes) => getReg(linha, ...nomes)))
-      .filter((p) => p.protocoloSiga);
-  }
+  const getReg = indexador(reg[0] || []);
+  const reguladores = reg.slice(1).map((linha) => mapProcessoRegulador((...nomes) => getReg(linha, ...nomes)))
+    .filter((p) => p.protocoloSiga);
 
   // base final: tudo do gerencial que NÃO é regulador + os reguladores (com analista)
   const naoReg = gerais.filter((p) => p.setor !== "REGULADORES");
