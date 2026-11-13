@@ -167,7 +167,8 @@
   }
 
   /* ----------------------------------------------------------- gráfico: matriz de calor (SIGA x SGA) */
-  function matriz(caixa, linhas, getA, getB, aoClicar) {
+  function matriz(caixa, linhas, getA, getB, aoClicar, rotA, rotB) {
+    rotA = rotA || "SIGA"; rotB = rotB || "SGA";
     if (!linhas.length) { caixa.replaceChildren(el("div", { class: "vazio" }, "Nenhum evento com os filtros atuais.")); return; }
     const n = new Map(), porA = new Map(), porB = new Map(), geral = new Map();
     for (const l of linhas) {
@@ -181,7 +182,7 @@
     const max = Math.max(...n.values());
     const nivel = (v) => (v ? Math.max(1, Math.ceil((5 * Math.log(1 + v)) / Math.log(1 + max))) : 0);
     const t = el("table", { class: "matriz" });
-    const cab = el("tr"); cab.append(el("th", { class: "canto", scope: "col" }, "SIGA ↓ / SGA →"));
+    const cab = el("tr"); cab.append(el("th", { class: "canto", scope: "col" }, `${rotA} ↓ / ${rotB} →`));
     for (const c of colunas) cab.append(el("th", { scope: "col" }, vazio(c)));
     cab.append(el("th", { class: "total", scope: "col" }, "Total"));
     t.appendChild(el("thead")).append(cab);
@@ -193,8 +194,8 @@
         const td = el("td", { class: "n" + nivel(v) + (v ? " celula" : "") + (v && a === b ? " igual" : "") }, v ? nf.format(v) : "·");
         if (v) {
           td.setAttribute("tabindex", "0"); td.setAttribute("role", "button");
-          td.setAttribute("aria-label", `SIGA ${vazio(a)}, SGA ${vazio(b)}: ${v} eventos. Filtrar`);
-          comDica(td, () => [nf.format(v) + " eventos", ["SIGA: " + vazio(a), "SGA: " + vazio(b), pct1(v, linhas.length) + " do filtrado"]]);
+          td.setAttribute("aria-label", `${rotA} ${vazio(a)}, ${rotB} ${vazio(b)}: ${v}. Filtrar`);
+          comDica(td, () => [nf.format(v) + " processos", [rotA + ": " + vazio(a), rotB + ": " + vazio(b), pct1(v, linhas.length) + " do filtrado"]]);
           if (aoClicar) aoAtivar(td, () => aoClicar(a, b));
         }
         tr.append(td);
