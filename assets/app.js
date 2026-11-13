@@ -46,6 +46,7 @@
   function valorColuna(p, col, cfg) {
     if (col.key === "analistaEff" || col.key === "consultorEff") return pessoaDe(p, cfg);
     if (col.tipo === "data") return dataBr(p[col.key]);
+    if (col.tipo === "moeda") { const v = p[col.key]; return v ? moeda.format(v) : ""; }
     if (col.tipo === "mes") { const v = p[col.key]; return v ? v.slice(5, 7) + "/" + v.slice(0, 4) : ""; }
     const v = p[col.key];
     return v === null || v === undefined ? "" : v;
@@ -265,6 +266,13 @@
       s.addEventListener("change", aoMudar);
       lab.append(s); selects[id] = s; w.append(lab);
     }
+    function campoData(id, rotulo, valorAtual) {
+      const lab = el("label", { class: "campo" }, rotulo);
+      const inp = el("input", { type: "date", min: "2015-01-01", max: "2099-12-31" });
+      inp.value = valorAtual || "";
+      inp.addEventListener("change", aoMudar);
+      lab.append(inp); selects[id] = inp; w.append(lab);
+    }
     if (cfg.modelo === "geral") {
       const distintos = (chave) => [...new Set(dados.processos.map((p) => p[chave]))];
       campoSelect("setor", "Setor", [["", "Todos"], ...(dados.listas.setores || []).map((s) => [s, s])], estado.setor);
@@ -286,6 +294,11 @@
         campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
       }
     }
+    // filtros comuns a todos os dashboards: Tarefa + Período (por data de abertura)
+    const tarefas = [...new Set(dados.processos.map((p) => p.tarefa).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    if (tarefas.length) campoSelect("tarefa", "Tarefa", [["", "Todas"], ...tarefas.map((t) => [t, t])], estado.tarefa);
+    campoData("dataDe", "De", estado.dataDe);
+    campoData("dataAte", "Até", estado.dataAte);
     const busca = el("input", { type: "search", placeholder: "protocolo, nome ou placa" });
     busca.value = estado.busca || "";
     const labB = el("label", { class: "campo" }, "Buscar"); labB.append(busca); w.append(labB);
@@ -295,7 +308,7 @@
     const limpar = el("button", { class: "botao claro", type: "button" }, "Limpar filtros");
     limpar.addEventListener("click", () => {
       Object.assign(estado, { pessoa: "", reguladorAnalista: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
-                              evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "" });
+                              evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", tarefa: "", dataDe: "", dataAte: "" });
       const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
       for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
@@ -322,6 +335,9 @@
       }
       if (cfg.modelo === "regulacao") { estado.statusRegulacao = s.statusRegulacao.value; if (s.reguladorAnalista) estado.reguladorAnalista = s.reguladorAnalista.value; }
     }
+    if (s.tarefa) estado.tarefa = s.tarefa.value;
+    if (s.dataDe) estado.dataDe = s.dataDe.value;
+    if (s.dataAte) estado.dataAte = s.dataAte.value;
     estado.busca = s.busca.value.trim();
   }
   function aplicarFiltros(processos, cfg, dados, estado) {
@@ -338,6 +354,9 @@
       if (estado.uf && (p.uf || "") !== estado.uf) return false;
       if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
       if (estado.cooperativa && (p.cooperativa || "") !== estado.cooperativa) return false;
+      if (estado.tarefa && (p.tarefa || "") !== estado.tarefa) return false;
+      if (estado.dataDe && (p.abertura || "") < estado.dataDe) return false;
+      if (estado.dataAte && (p.abertura || "") > estado.dataAte) return false;
       if (estado.pessoa && pessoaDe(p, cfg) !== estado.pessoa) return false;
       if (cfg.modelo === "pendencia") {
         if (estado.situacao !== null && estado.situacao !== undefined && norm(p.situacao) !== estado.situacao) return false;
@@ -452,7 +471,7 @@
     mount.replaceChildren(carregando());
     const dados = await GS.DB.carregar(chave);
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
-                     evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", vidrosMarca: false, vidrosModelo: false };
+                     evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", tarefa: "", dataDe: "", dataAte: "", vidrosMarca: false, vidrosModelo: false };
 
     mount.replaceChildren();
     mount.append(abertura(cfg, cfg.tituloDash, cfg.ledeDash));
