@@ -91,7 +91,7 @@
         { rot: "Consultor", key: "consultor" },
         { rot: "Cooperativa", key: "cooperativa", classe: "fixo" },
         { rot: "Participação", key: "participacao", classe: "num", tipo: "moeda" },
-        { rot: "Data autorizado", key: "dataAutorizado", classe: "fixo", tipo: "data" },
+        { rot: "Data do comunicado", key: "dataComunicado", classe: "fixo", tipo: "data" },
         { rot: "Classif. negativa", key: "classif" },
         COL_DIAS, COL_SIGA, COL_SGA,
       ],
