@@ -58,7 +58,14 @@ body { margin: 0; background: var(--plano); color: var(--tinta); font: 400 14px/
 .lateral a.item.ativo { background: var(--verde); color: #2d350a; font-weight: 600; }
 .lateral a.item.ativo svg { opacity: 1; }
 .lateral a.item.ativo path { fill: #2d350a; }
-.lateral .rodape-lat { margin-top: auto; padding: 18px 22px 22px; font-size: 11px; color: #a3a1a1; line-height: 1.5; }
+.lateral .sair-lat { margin-top: auto; padding: 12px 14px 4px; display: flex; flex-direction: column; gap: 7px; }
+.lateral .sair-lat .papel-atual { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: #a3a1a1; padding-left: 4px; }
+.lateral button.sair { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; cursor: pointer;
+  background: rgba(255,255,255,.06); color: #e4e3e2; border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
+  padding: 10px 12px; font-family: inherit; font-size: 14px; font-weight: 500; transition: background .15s; }
+.lateral button.sair:hover, .lateral button.sair:focus-visible { background: rgba(255,255,255,.14); color: #fff; outline: none; }
+.lateral button.sair svg { flex: none; opacity: .85; }
+.lateral .rodape-lat { padding: 14px 22px 22px; font-size: 11px; color: #a3a1a1; line-height: 1.5; }
 .lateral .rodape-lat b { color: #d7d6d5; font-weight: 600; }
 
 /* botão de menu (telas estreitas) */

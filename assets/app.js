@@ -66,6 +66,24 @@
     ];
   }
 
+  const ROTULO_PAPEL = { gerencial: "Coordenação (vê tudo)", analistas: "Analistas", reguladores: "Reguladores", consultores: "Consultores" };
+
+  // Logout de HTTP Basic Auth: o navegador guarda o usuário/senha e os reenvia
+  // sozinho. Para "sair", mandamos uma requisição com credenciais INVÁLIDAS — o
+  // servidor responde 401 e o navegador passa a guardar essas credenciais ruins;
+  // ao recarregar, ele pede o login de novo. (No modo demo não há login: só recarrega.)
+  function sair() {
+    if (!window.confirm("Sair do painel? Vai ser preciso entrar com usuário e senha de novo.")) return;
+    const finaliza = () => location.replace("/?saiu=" + Date.now());
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", "/?logout=" + Date.now(), true, "sair", "sair-" + Date.now());
+      xhr.onloadend = finaliza;
+      xhr.onerror = finaliza;
+      xhr.send();
+    } catch (_) { finaliza(); }
+  }
+
   function construirShell() {
     const lateral = document.getElementById("lateral");
     const nav = lateral.querySelector("nav");
@@ -79,6 +97,17 @@
         nav.append(a);
       }
     }
+    // botão "Sair" (logout do Basic Auth) no rodapé do menu
+    const velhoSair = lateral.querySelector(".sair-lat");
+    if (velhoSair) velhoSair.remove();
+    const blocoSair = el("div", { class: "sair-lat" });
+    if (GS.PAPEL) blocoSair.append(el("div", { class: "papel-atual" }, "Acesso: " + (ROTULO_PAPEL[GS.PAPEL] || GS.PAPEL)));
+    const btnSair = el("button", { class: "sair", type: "button" });
+    btnSair.append(svgIcone(ICONES.sair, "#e4e3e2", 16), el("span", null, "Sair"));
+    btnSair.addEventListener("click", sair);
+    blocoSair.append(btnSair);
+    lateral.insertBefore(blocoSair, lateral.querySelector(".rodape-lat"));
+
     // selo de fonte no topo (atualizado também quando a fonte ao vivo resolve)
     atualizarSeloFonte();
     // menu mobile
