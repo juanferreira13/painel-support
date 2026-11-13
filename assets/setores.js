@@ -129,7 +129,7 @@
         { rot: "Cidade", key: "cidade", classe: "fixo" },
         { rot: "Oficina", key: "oficina" },
         { rot: "Status regulação", key: "statusRegulacao" },
-        { rot: "Vistoria inicial", key: "dataRegulagem", classe: "fixo", tipo: "data" },
+        { rot: "Vistoria inicial", key: "dataRegulagem", classe: "fixo", tipo: "data", editavel: true },
         { rot: "DATA AUTORIZADO", key: "dataAutorizado", classe: "fixo", tipo: "data" },
         { rot: "Dias atraso SIGA", key: "diasAtrasoSiga", classe: "num" },
         { rot: "Dias úteis autoriz.", key: "diasUteisAutorizado", classe: "num" },
@@ -175,6 +175,6 @@
   };
 
   GS.ORDEM_SETORES = ["analistas", "reguladores", "consultores"];        // setores com dashboard de equipe
-  GS.ORDEM_PREENCHIMENTO = ["reguladores"];                              // único com preenchimento (resto só no SGA)
+  GS.ORDEM_PREENCHIMENTO = [];                                           // sem aba de preenchimento: a Data da Vistoria Inicial é editada no próprio dashboard dos reguladores
   GS.DASH_ORDEM = ["sinistro", "analistas", "reguladores", "consultores"];   // ordem dos dashboards
 })();

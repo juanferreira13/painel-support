@@ -370,6 +370,14 @@ footer.rodape b { color: #fff; font-weight: 600; }
 .alternar-dim button.ativo { background: var(--verde); color: var(--tinta); font-weight: 600; }
 .alternar-dim button:hover:not(.ativo), .alternar-dim button:focus-visible { color: var(--tinta); }
 
+/* célula editável na lista (ex.: Data da Vistoria Inicial dos reguladores) */
+.edit-cel { font: 400 12.5px var(--fonte); color: var(--tinta); background: #fff; border: 1px solid var(--eixo);
+  border-radius: 8px; padding: 3px 6px; max-width: 150px; transition: border-color .15s, box-shadow .15s; }
+.edit-cel:focus { outline: 2px solid var(--verde); outline-offset: 1px; border-color: var(--verde-600); }
+.edit-cel:disabled { opacity: .6; }
+.edit-cel.salvo { border-color: var(--bom); box-shadow: 0 0 0 2px rgba(12, 163, 12, .2); }
+.edit-cel.erro { border-color: var(--critico); box-shadow: 0 0 0 2px rgba(208, 59, 59, .2); }
+
 /* ----------------------------------------------------------------- responsivo */
 @media (max-width: 1000px) {
   .app { grid-template-columns: 1fr; }

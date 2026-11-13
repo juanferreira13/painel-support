@@ -65,6 +65,7 @@
     const nav = lateral.querySelector("nav");
     nav.replaceChildren();
     for (const grupo of NAV) {
+      if (!grupo.itens.length) continue;   // não mostra grupo vazio (ex.: Preenchimento quando não há)
       if (grupo.rot) nav.append(el("div", { class: "grupo-rot" }, grupo.rot));
       for (const it of grupo.itens) {
         const a = el("a", { class: "item", href: "#/" + it.rota, "data-rota": it.rota });
@@ -135,7 +136,7 @@
   }
 
   /* lista de processos: tabela ordenável e paginada */
-  function listaProcessos(corpo, processos, cfg, estado) {
+  function listaProcessos(corpo, processos, cfg, estado, aoEditar) {
     const COLS = cfg.colunas;
     const POR_PAGINA = 40;
     estado.lista = estado.lista || { ordem: "diasAberto", desc: true, pagina: 0 };
@@ -182,9 +183,21 @@
         const tr = el("tr");
         for (const col of COLS) {
           const td = el("td", col.classe ? { class: col.classe } : null);
-          const val = valorColuna(p, col, cfg);
-          if (col.difere && divergente(p) && val) td.append(el("span", { class: "difere", title: "Diferente do status no SIGA" }, val));
-          else td.textContent = val === "" ? "—" : val;
+          if (col.editavel) {
+            const inp = el("input", { type: col.tipo === "data" ? "date" : "text", class: "edit-cel", value: p[col.key] == null ? "" : p[col.key] });
+            inp.addEventListener("change", async () => {
+              inp.classList.remove("salvo", "erro"); inp.disabled = true;
+              let ok = true;
+              try { ok = aoEditar ? await aoEditar(p, col.key, inp.value) : true; } catch (_) { ok = false; }
+              inp.disabled = false; inp.classList.add(ok ? "salvo" : "erro");
+              setTimeout(() => inp.classList.remove("salvo", "erro"), 2200);
+            });
+            td.append(inp);
+          } else {
+            const val = valorColuna(p, col, cfg);
+            if (col.difere && divergente(p) && val) td.append(el("span", { class: "difere", title: "Diferente do status no SIGA" }, val));
+            else td.textContent = val === "" ? "—" : val;
+          }
           tr.append(td);
         }
         return tr;
@@ -400,7 +413,7 @@
     const p = el("p", { class: "lede" }, "Dashboards e preenchimento dos setores de analistas, reguladores e consultores — no mesmo padrão visual da conferência e do acompanhamento, integrados em uma única página.");
     const acoes = el("div", { class: "acoes" });
     const b1 = el("a", { class: "btn-hero cheio", href: "#/dashboard/sinistro" }); b1.append(el("span", null, "Ver dashboards"), svgIcone(ICONES.seta, "#2d350a", 16));
-    const b2 = el("a", { class: "btn-hero vazado", href: "#/preenchimento/reguladores" }, "Ir para o preenchimento");
+    const b2 = el("a", { class: "btn-hero vazado", href: "#/dashboard/reguladores" }, "Reguladores (vistoria inicial)");
     acoes.append(b1, b2);
     const nums = el("div", { class: "hero-nums" });
     const cel = (v, t) => { const n = el("div", { class: "n" }); n.append(el("b", null, v), el("span", null, t)); return n; };
@@ -484,6 +497,13 @@
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                      evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataDe: "", dataAte: "",
                      soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, vidrosMarca: false, vidrosModelo: false };
+
+    // edição inline (ex.: Data da Vistoria Inicial no dashboard dos reguladores) -> grava no Sheets
+    async function aoEditarCelula(p, campo, valor) {
+      p[campo] = valor;
+      const res = await GS.DB.salvarValores([{ protocolo: p.protocoloSiga, campo, valor }]);
+      return !(res && res.ok === false);
+    }
 
     mount.replaceChildren();
     mount.append(abertura(cfg, cfg.tituloDash, cfg.ledeDash));
@@ -621,7 +641,7 @@
         G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         motivosNegativa(cards.motivos.corpo, linhas);
       }
-      listaProcessos(listaCard.corpo, linhas, cfg, estado);
+      listaProcessos(listaCard.corpo, linhas, cfg, estado, aoEditarCelula);
       for (const s of listaCard.c.querySelectorAll(".lista-sub")) s.textContent = `${nf.format(linhas.length)} de ${nf.format(dados.processos.length)} processos, conforme os filtros acima.`;
       exportar.onclick = () => {
         const cab = cfg.colunas.map((c) => c.rot);
