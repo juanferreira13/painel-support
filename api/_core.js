@@ -224,9 +224,10 @@ export async function carregarTudo(cfg) {
   const reguladores = reg.slice(1).map((linha) => mapProcessoRegulador((...nomes) => getReg(linha, ...nomes)))
     .filter((p) => p.protocoloSiga);
 
-  // protocolo SIGA -> "Regulador" (coluna AM da aba SIGA) = regulador ORÇAMENTISTA correto
-  const orcamentistaSiga = new Map();
-  for (const p of gerais) { const k = norm(p.protocoloSiga); if (k && trim(p.regulador)) orcamentistaSiga.set(k, trim(p.regulador)); }
+  // protocolo SIGA -> processo da aba SIGA: traz "Regulador"/AM (= orçamentista),
+  // Tarefa (etapa), datas e dias em atraso — campos que a aba REGULADORES pode não ter
+  const sigaPorProtocolo = new Map();
+  for (const p of gerais) { const k = norm(p.protocoloSiga); if (k) sigaPorProtocolo.set(k, p); }
 
   // base final: tudo do gerencial que NÃO é regulador + os reguladores
   const naoReg = gerais.filter((p) => p.setor !== "REGULADORES");
@@ -235,8 +236,16 @@ export async function carregarTudo(cfg) {
     // regulador analista pela BASE (NUMERO -> analista): preenche sempre (resolve coluna duplicada/vazia)
     if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
     if (p.setor === "REGULADORES") {
-      const orc = orcamentistaSiga.get(norm(p.protocoloSiga));
-      if (orc) p.responsavel = orc;                        // orçamentista = "Regulador" (SIGA coluna AM)
+      const base = sigaPorProtocolo.get(norm(p.protocoloSiga));
+      if (base) {
+        if (trim(base.regulador)) p.responsavel = trim(base.regulador);         // orçamentista = "Regulador" (SIGA col AM)
+        if (!trim(p.tarefa)) p.tarefa = base.tarefa;                            // tarefa (etapa) vem da aba SIGA
+        if (!p.diasAtraso) p.diasAtraso = base.diasAtraso;                      // dias em atraso (coluna O)
+        if (!trim(p.diasAtrasoSiga)) p.diasAtrasoSiga = base.diasAtrasoSiga;
+        if (!trim(p.dataComunicado)) p.dataComunicado = base.dataComunicado;
+        if (!trim(p.dataAutorizado)) p.dataAutorizado = base.dataAutorizado;
+        if (!trim(p.diasUteisAutorizado)) p.diasUteisAutorizado = base.diasUteisAutorizado;
+      }
       if (!p.dataRegulagem) p.dataRegulagem = vistoriaDe(p);
     }
   }

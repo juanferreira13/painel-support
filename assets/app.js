@@ -366,7 +366,7 @@
     limpar.addEventListener("click", () => {
       Object.assign(estado, { pessoa: "", reguladorAnalista: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                               evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataDe: "", dataAte: "",
-                              soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soAtrasados: false });
+                              soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, soAtrasados: false });
       const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
       for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
@@ -402,6 +402,17 @@
     if (s.dataAte) estado.dataAte = s.dataAte.value;
     estado.busca = s.busca.value.trim();
   }
+  // Etapa (ex.: vistoria inicial dos reguladores) — agrupa várias tarefas.
+  // Devolve o rótulo curto da tarefa dentro da etapa, ou "" se o processo não está na etapa.
+  function etapaChave(p, cfg) {
+    if (!cfg || !cfg.etapa) return "";
+    const t = GS.semAcento(p.tarefa || "");
+    if (!t) return "";
+    for (const [chave, rot] of cfg.etapa.chaves) if (t.includes(chave)) return rot;
+    return "";
+  }
+  const naEtapa = (p, cfg) => !!etapaChave(p, cfg);
+
   function aplicarFiltros(processos, cfg, dados, estado) {
     const termo = GS.semAcento(estado.busca || "");
     const dcampo = cfg.dataCampo || estado.dataCampo || "abertura";   // qual data o De/Até usa
@@ -435,6 +446,7 @@
       if (cfg.modelo === "regulacao") {
         if (estado.statusRegulacao && p.statusRegulacao !== estado.statusRegulacao) return false;
         if (estado.reguladorAnalista && norm(p.reguladorAnalista) !== estado.reguladorAnalista) return false;
+        if (estado.soEtapa && cfg.etapa && !naEtapa(p, cfg)) return false;   // foco só na etapa (vistoria inicial)
       }
       if (estado.soAtrasados && !estaAtrasado(p, dados)) return false;
       if (termo) {
@@ -542,7 +554,7 @@
     const dados = await GS.DB.carregar(chave);
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                      evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataCampo: "dataComunicado", dataDe: "", dataAte: "",
-                     soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, vidrosMarca: false, vidrosModelo: false };
+                     soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, vidrosMarca: false, vidrosModelo: false };
 
     // edição inline (ex.: Data da Vistoria Inicial no dashboard dos reguladores) -> grava no Sheets
     async function aoEditarCelula(p, campo, valor) {
@@ -598,6 +610,7 @@
       cards.pessoas.c.insertBefore(dimTog, cards.pessoas.c.firstChild);
       cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
       grade.append(cards.status.c, cards.pessoas.c, cards.cidade.c);
+      if (cfg.etapa) { cards.etapa = cartao("cinco", "Etapa · " + cfg.etapa.rotulo.toLowerCase(), "Quantos processos aguardando em cada tarefa da etapa (sem finalizados/negados). Clique numa barra para filtrar."); grade.append(cards.etapa.c); }
       if (cfg.temMatriz) { cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
       cards.tarefaOrc = cartao("", "Tarefa × Regulador orçamentista", "Processos em cada tarefa por orçamentista — sem finalizados/negados. Clique numa célula para filtrar.");
       cards.regStatus = cartao("", "Regulador × Status da regulação", "Quantos processos cada regulador tem em cada status. Clique para filtrar.");
@@ -662,6 +675,10 @@
           sincFiltros(); atualizar();
         }, nomeDe, dimAna ? "reguladorAnalista" : "pessoa");
         if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, (k) => { estado.cidade = estado.cidade === k ? "" : k; atualizar(); }, estado, "cidade", 12);
+        if (cards.etapa) {
+          const aguardando = linhas.filter((p) => naEtapa(p, cfg) && !p._concluido && !p._negado);
+          barrasPorCampo(cards.etapa.corpo, aguardando, (p) => p.tarefa || "", null, (k) => { estado.tarefa = estado.tarefa === k ? "" : k; sincFiltros(); atualizar(); }, estado, "tarefa", 8);
+        }
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         if (cards.tarefaOrc) {
           const base = linhas.filter((p) => !p._concluido && !p._negado);
@@ -767,6 +784,16 @@
       indicadorFixo("Aguardando vistoria", nf.format(conta("Aguardando vistoria")), pct(conta("Aguardando vistoria"), total) + " do total", "relogio", "var(--aviso)"),
       indicadorFixo("Negados", nf.format(negAberto), pct(negAberto, total) + " dos processos", "atraso", "var(--critico)"),
     ];
+    // tile da ETAPA (ex.: vistoria inicial): quantos aguardando; clicar foca só a etapa
+    if (cfg.etapa) {
+      const aguard = linhas.filter((p) => naEtapa(p, cfg) && !p._concluido && !p._negado).length;
+      const on = estado.soEtapa;
+      const b = el("button", { type: "button", class: "indicador" + (on ? " ativo" : ""), "aria-pressed": String(on) });
+      const r = el("div", { class: "rotulo" }); r.append(svgIcone(ICONES.relogio, "var(--aviso)", 15), el("span", null, "Aguardando · " + cfg.etapa.rotulo.toLowerCase()));
+      b.append(r, el("div", { class: "valor" }, nf.format(aguard)), el("div", { class: "nota" }, on ? "filtrando a etapa · clique para tirar" : pct(aguard, total) + " — clique p/ focar a etapa"));
+      b.addEventListener("click", () => { estado.soEtapa = !estado.soEtapa; atualizar(); });
+      itens.push(b);
+    }
     // "acusar" (clicáveis): negado sem motivo, sem orçamentista (exceto Análise do Processo), sem analista
     const sa = GS.semAcento;
     const acusar = [

@@ -114,6 +114,17 @@
       dataCampo: "dataAutorizado",   // filtro de período dos reguladores = DATA AUTORIZADO
       analistaCampo: "reguladorAnalista",    // regulador analista (casado por ID EXTERNO no integrador)
       temMatriz: true,
+      // Etapa da vistoria inicial: engloba várias tarefas. Casamento tolerante
+      // (sem acento/caixa) por trecho-chave -> rótulo curto. Ajuste as chaves se
+      // os nomes das tarefas na planilha forem diferentes.
+      etapa: {
+        rotulo: "Vistoria inicial",
+        chaves: [
+          ["VISTORIA INICIAL", "Vistoria inicial"],
+          ["COMUNICAR AUTORIZA", "Comunicar autorização"],
+          ["CARRO RESERVA", "Analisar carro reserva"],
+        ],
+      },
       // único setor que mantém preenchimento (os demais atualizam só o SGA).
       // Fase 2: só a Data da Vistoria Inicial — é o único campo sem lugar no SGA e
       // o único com destino real na planilha (aba BASE VISTORIA INICIAL, via /api/salvar).
