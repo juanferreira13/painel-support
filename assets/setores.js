@@ -71,6 +71,8 @@
       modelo: "pendencia",      // PREENCHER / ATRASADO / EM DIA / CONCLUÍDO
       pessoaCampo: "analista",  // coluna de pessoa (vazio = responsável no SIGA)
       dataCampo: "dataComunicado",   // filtro de período dos analistas = DATA COMUNICADO EVENTO
+      semPorStatus: true,   // não mostra "Por status (SGA)" — a matriz SIGA×SGA já cobre
+      porTarefa: true,      // troca o gráfico "Por cidade" por "Por tarefa"
       // campos editáveis (preenchimento) — refletem PARTICIPAÇÃO, OBSERVAÇÃO + acompanhamento
       campos: [
         { id: "analista", rot: "Analista", tipo: "select", fonte: "analistas", vazio: "Responsável no SIGA" },

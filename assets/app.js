@@ -585,15 +585,20 @@
     const cards = {};
     if (cfg.modelo === "pendencia") {
       cards.pessoas = cartao("sete", "Por " + cfg.rotulo.replace(/e?s$/, "").toLowerCase(), "Clique em uma linha para filtrar.");
-      cards.situacao = GS.FONTE.live
-        ? cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA. Clique para ver os processos.")
-        : cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
-      grade.append(cards.situacao.c, cards.pessoas.c);
+      if (cfg.semPorStatus) {                 // analistas: a matriz SIGA×SGA já mostra o status
+        grade.append(cards.pessoas.c);
+      } else {
+        cards.situacao = GS.FONTE.live
+          ? cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA. Clique para ver os processos.")
+          : cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
+        grade.append(cards.situacao.c, cards.pessoas.c);
+      }
       cards.evento = cartao("cinco", "Por evento", "Tipo de evento do setor. Clique para filtrar.");
       cards.cobertura = cartao("cinco", "Por cobertura", "Distribuição por cobertura. Clique para filtrar.");
-      cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
+      if (cfg.porTarefa) cards.tarefaG = cartao("cinco", "Por tarefa", "Processos em cada tarefa. Clique para filtrar.");
+      else cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
       cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Cruzamento dos status. Clique numa célula para filtrar.");
-      grade.append(cards.evento.c, cards.cobertura.c, cards.cidade.c, cards.matriz.c);
+      grade.append(cards.evento.c, cards.cobertura.c, (cfg.porTarefa ? cards.tarefaG.c : cards.cidade.c), cards.matriz.c);
       if (cfg.temOficinas) { cards.oficinas = cartao("", "Rede de oficinas", "Oficinas homologadas, com vagas e consultor responsável."); grade.append(cards.oficinas.c); }
     } else if (cfg.modelo === "regulacao") {
       cards.status = cartao("cinco", "Por status da regulação", "Situação de cada processo. Clique para filtrar.");
@@ -658,12 +663,15 @@
       resumo.replaceChildren(...indicadores(linhas, cfg, dados, estado, atualizar));
       // gráficos
       if (cfg.modelo === "pendencia") {
-        if (GS.FONTE.live)
-          barrasPorCampo(cards.situacao.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; sincFiltros(); atualizar(); }, estado, "fsga", 12);
-        else
-          barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
+        if (cards.situacao) {
+          if (GS.FONTE.live)
+            barrasPorCampo(cards.situacao.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; sincFiltros(); atualizar(); }, estado, "fsga", 12);
+          else
+            barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
+        }
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
         const togFil = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; sincFiltros(); atualizar(); };
+        if (cards.tarefaG) barrasPorCampo(cards.tarefaG.corpo, linhas, (p) => p.tarefa || "", null, togFil("tarefa"), estado, "tarefa", 12);
         if (cards.evento) barrasPorCampo(cards.evento.corpo, linhas, (p) => p.evento || "", null, togFil("evento"), estado, "evento", 12);
         if (cards.cobertura) barrasPorCampo(cards.cobertura.corpo, linhas, (p) => p.cobertura || "", null, togFil("cobertura"), estado, "cobertura", 12);
         if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, togFil("cidade"), estado, "cidade", 12);
