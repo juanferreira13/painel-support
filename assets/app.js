@@ -21,8 +21,11 @@
   function selo(k) { const s = el("span", { class: "selo" }); s.append(svgIcone(ICONES[PEND[k].icone], PEND[k].cor), el("span", null, PEND[k].rotulo)); return s; }
   function pendencia(p, dados) {
     if (GS.FONTE.live) {   // dados reais: atraso = coluna "Dias em atraso" (SIGA O) > 0
+      // Encerrados (finalizado×finalizado / negado×negado) = CONCLUÍDO: ficam visíveis
+      // na lista (pra conferir quem esqueceu de encerrar a tarefa), mas FORA dos atrasados.
       if (p._concluido) return "CONCLUÍDO";
-      if (p._negado) return "EM DIA";
+      if (norm(p.statusSiga) === "NEGADO" && norm(p.statusSga) === "NEGADO") return "CONCLUÍDO";
+      if (p._negado) return "EM DIA";   // negado em só um dos sistemas = divergência (segue o status divergente)
       return (p.diasAtraso || 0) > 0 ? "ATRASADO" : "EM DIA";
     }
     const s = norm(p.situacao);
@@ -331,8 +334,8 @@
       campoSelect("pessoa", cfg.rotuloPessoa || cfg.rotulo.replace(/e?s$/, ""), [["", "Todos"], ...listaPessoas.map((p) => [p, p])], estado.pessoa);
       if (cfg.modelo === "pendencia") {
         const distintos = (chave) => [...new Set(dados.processos.map((p) => (p[chave] == null ? "" : String(p[chave]))))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-        campoSelect("situacao", "Situação", [["*", "Todas"], ["", "(não preenchida)"], ...dados.listas.situacoes.map((s) => [s, s])], estado.situacao);
-        campoSelect("pend", "Pendência", [["", "Todas"], ["acao", "Precisam de ação"], ["ATRASADO", "Atrasados"], ["PREENCHER", "A preencher"], ["EM DIA", "Em dia"], ["CONCLUÍDO", "Concluídos"]], estado.pend);
+        // Situação/Pendência saíram da barra: Situação não existe ao vivo e Pendência
+        // já é filtrada pelos cartões (Atrasados/Em dia/Concluídos) no topo.
         campoSelect("fsga", "Status SGA", [["*", "Todos"], ...distintos("statusSga").map((s) => [s, s === "" ? "(não preenchido)" : s])], estado.fsga);
         campoSelect("evento", "Evento", [["", "Todos"], ...distintos("evento").filter(Boolean).map((s) => [s, s])], estado.evento);
         campoSelect("cobertura", "Cobertura", [["", "Todas"], ...distintos("cobertura").filter(Boolean).map((s) => [s, s])], estado.cobertura);
@@ -385,7 +388,8 @@
     } else {
       estado.pessoa = s.pessoa.value;
       if (cfg.modelo === "pendencia") {
-        estado.situacao = s.situacao.value === "*" ? null : s.situacao.value; estado.pend = s.pend.value;
+        if (s.situacao) estado.situacao = s.situacao.value === "*" ? null : s.situacao.value;
+        if (s.pend) estado.pend = s.pend.value;
         if (s.fsga) estado.fsga = s.fsga.value === "*" ? null : s.fsga.value;
         if (s.evento) estado.evento = s.evento.value;
         if (s.cobertura) estado.cobertura = s.cobertura.value;
