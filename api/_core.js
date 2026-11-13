@@ -154,6 +154,7 @@ function mapProcessoSiga(get) {
     dataAutorizado: paraIso(get("DATA AUTORIZADO", "DATA AUTORIZAÇÃO", "DATA AUTORIZACAO")),
     diasUteisAutorizado: trim(get("DIAS UTEIS AUTORIZADO", "DIAS UTEIS DE AUTORIZAÇÃO", "DIAS UTEIS DO AUTORIZAÇÃO", "DIAS UTEIS DE AUTORIZACAO")),
     diasAtrasoSiga: trim(get("Dias em atraso", "Dias em atraso SIGA")),
+    diasAtraso: paraNumero(get("Dias em atraso", "Dias em atraso SIGA")),   // coluna O do SIGA (> 0 = atrasado)
     placaSga: trim(get("PLACA SGA")),
     mesRefSiga: trim(get("MÊS REF SIGA", "MES REF SIGA")),
     oficinaSga: trim(get("OFICINA SGA", "OFICINAS")),
@@ -223,13 +224,21 @@ export async function carregarTudo(cfg) {
   const reguladores = reg.slice(1).map((linha) => mapProcessoRegulador((...nomes) => getReg(linha, ...nomes)))
     .filter((p) => p.protocoloSiga);
 
-  // base final: tudo do gerencial que NÃO é regulador + os reguladores (com analista)
+  // protocolo SIGA -> "Regulador" (coluna AM da aba SIGA) = regulador ORÇAMENTISTA correto
+  const orcamentistaSiga = new Map();
+  for (const p of gerais) { const k = norm(p.protocoloSiga); if (k && trim(p.regulador)) orcamentistaSiga.set(k, trim(p.regulador)); }
+
+  // base final: tudo do gerencial que NÃO é regulador + os reguladores
   const naoReg = gerais.filter((p) => p.setor !== "REGULADORES");
   const processos = naoReg.concat(reguladores.length ? reguladores : gerais.filter((p) => p.setor === "REGULADORES"));
-  // completa o regulador analista pela BASE quando a coluna da aba veio vazia; e a data da vistoria inicial
-  for (const p of processos) if (p.setor === "REGULADORES") {
+  for (const p of processos) {
+    // regulador analista pela BASE (NUMERO -> analista): preenche sempre (resolve coluna duplicada/vazia)
     if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
-    if (!p.dataRegulagem) p.dataRegulagem = vistoriaDe(p);
+    if (p.setor === "REGULADORES") {
+      const orc = orcamentistaSiga.get(norm(p.protocoloSiga));
+      if (orc) p.responsavel = orc;                        // orçamentista = "Regulador" (SIGA coluna AM)
+      if (!p.dataRegulagem) p.dataRegulagem = vistoriaDe(p);
+    }
   }
 
   const LIXO = new Set(["", "#N/A", "N/A", "#REF!", "-", "NÃO INFORMADO", "NAO INFORMADO"]);

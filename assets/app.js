@@ -19,26 +19,23 @@
   };
   const ORDEM_PEND = { "ATRASADO": 0, "PREENCHER": 1, "EM DIA": 2, "CONCLUÍDO": 3 };
   function selo(k) { const s = el("span", { class: "selo" }); s.append(svgIcone(ICONES[PEND[k].icone], PEND[k].cor), el("span", null, PEND[k].rotulo)); return s; }
-  const DIAS_ATRASO_LIVE = 30;   // sem "prazo" nos dados reais: atrasado = dias em aberto acima disto
   function pendencia(p, dados) {
-    if (GS.FONTE.live) {   // dados reais: baseia em status + dias em aberto (não há preenchimento)
+    if (GS.FONTE.live) {   // dados reais: atraso = coluna "Dias em atraso" (SIGA O) > 0
       if (p._concluido) return "CONCLUÍDO";
       if (p._negado) return "EM DIA";
-      return (p.diasAberto || 0) > DIAS_ATRASO_LIVE ? "ATRASADO" : "EM DIA";
+      return (p.diasAtraso || 0) > 0 ? "ATRASADO" : "EM DIA";
     }
     const s = norm(p.situacao);
     if (!s) return "PREENCHER";
     if (s === dados.listas.concluido) return "CONCLUÍDO";
     return p.prazo && p.prazo < GS.HOJE ? "ATRASADO" : "EM DIA";
   }
-  // Atraso unificado (serve o gerencial e os BIs). Reguladores não têm prazo:
-  // conta como atrasado o que segue em aberto há muitos dias (vistoria/regulação parada).
-  const LIMITE_REG_DIAS = 30;
+  // Atraso unificado (gerencial + BIs): coluna "Dias em atraso" (SIGA O) > 0, fora concluído/negado.
   function estaAtrasado(p, dados) {
     if (p.setor === "REGULADORES") {
       if (norm(p.statusRegulacao) === "Regularizado") return false;
       if (p.statusSiga === "NEGADO" || p.statusSga === "NEGADO") return false;
-      return (p.diasAberto || 0) >= LIMITE_REG_DIAS;
+      return (p.diasAtraso || 0) > 0;
     }
     return pendencia(p, dados) === "ATRASADO";
   }
@@ -309,10 +306,17 @@
         campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
       }
     }
-    // filtros comuns a todos os dashboards: Tarefa + Período (por data de abertura)
-    const tarefas = [...new Set(dados.processos.map((p) => p.tarefa).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    // filtros comuns: Estado + Tarefa + Período (data por dashboard)
+    const distinto = (campo) => [...new Set(dados.processos.map((p) => (p[campo] == null ? "" : String(p[campo]))).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const ufs = distinto("uf");
+    if (ufs.length) campoSelect("uf", "Estado", [["", "Todos"], ...ufs.map((u) => [u, u])], estado.uf);
+    const tarefas = distinto("tarefa");
     if (tarefas.length) campoSelect("tarefa", "Tarefa", [["", "Todas"], ...tarefas.map((t) => [t, t])], estado.tarefa);
-    campoData("dataDe", "De", estado.dataDe);
+    // data: analistas=comunicado, reguladores/consultores=autorização; gerencial escolhe entre as duas
+    const NOMES_DATA = { dataComunicado: "comunicado", dataAutorizado: "autorização", abertura: "abertura" };
+    if (!cfg.dataCampo) campoSelect("dataCampo", "Data por", [["dataComunicado", "Data comunicado"], ["dataAutorizado", "Data autorização"]], estado.dataCampo);
+    const rotD = cfg.dataCampo ? (NOMES_DATA[cfg.dataCampo] || "") : "";
+    campoData("dataDe", "De" + (rotD ? " (" + rotD + ")" : ""), estado.dataDe);
     campoData("dataAte", "Até", estado.dataAte);
     const busca = el("input", { type: "search", placeholder: "protocolo, nome ou placa" });
     busca.value = estado.busca || "";
@@ -353,13 +357,16 @@
       }
       if (cfg.modelo === "regulacao") { estado.statusRegulacao = s.statusRegulacao.value; if (s.reguladorAnalista) estado.reguladorAnalista = s.reguladorAnalista.value; }
     }
+    if (s.uf) estado.uf = s.uf.value;
     if (s.tarefa) estado.tarefa = s.tarefa.value;
+    if (s.dataCampo) estado.dataCampo = s.dataCampo.value;
     if (s.dataDe) estado.dataDe = s.dataDe.value;
     if (s.dataAte) estado.dataAte = s.dataAte.value;
     estado.busca = s.busca.value.trim();
   }
   function aplicarFiltros(processos, cfg, dados, estado) {
     const termo = GS.semAcento(estado.busca || "");
+    const dcampo = cfg.dataCampo || estado.dataCampo || "abertura";   // qual data o De/Até usa
     return processos.filter((p) => {
       if (cfg.modelo === "geral" && estado.setor && p.setor !== estado.setor) return false;
       // filtros de atributo — valem em qualquer dashboard (setados por gráfico, matriz ou select)
@@ -374,8 +381,8 @@
       if (estado.cooperativa && (p.cooperativa || "") !== estado.cooperativa) return false;
       if (estado.tarefa && (p.tarefa || "") !== estado.tarefa) return false;
       if (estado.consultor && (p.consultor || "") !== estado.consultor) return false;
-      if (estado.dataDe && (p.abertura || "") < estado.dataDe) return false;
-      if (estado.dataAte && (p.abertura || "") > estado.dataAte) return false;
+      if (estado.dataDe && (p[dcampo] || "") < estado.dataDe) return false;
+      if (estado.dataAte && (p[dcampo] || "") > estado.dataAte) return false;
       if (estado.soDivergente && !divergente(p)) return false;
       if (estado.semParticipacao && (p.participacao || 0) > 0) return false;
       if (estado.negadoSemMotivo && !(norm(p.statusSiga) === "NEGADO" && norm(p.statusSga) === "NEGADO" && !norm(p.classif))) return false;
@@ -495,7 +502,7 @@
     mount.replaceChildren(carregando());
     const dados = await GS.DB.carregar(chave);
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
-                     evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataDe: "", dataAte: "",
+                     evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataCampo: "dataComunicado", dataDe: "", dataAte: "",
                      soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, vidrosMarca: false, vidrosModelo: false };
 
     // edição inline (ex.: Data da Vistoria Inicial no dashboard dos reguladores) -> grava no Sheets
@@ -627,7 +634,7 @@
         const conta = new Map(); for (const p of linhas) conta.set(p.competencia, (conta.get(p.competencia) || 0) + 1);
         G.colunasMes(cards.mes.corpo, eixo, conta, (k) => [mesRotulo(k)]);
         barrasPorCampo(cards.setor.corpo, linhas, (p) => p.setor, (dados.listas.setores || []).slice(), (k) => { estado.setor = estado.setor === k ? "" : k; sincFiltros(); atualizar(); }, estado, "setor");
-        const togFiltro = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; atualizar(); };
+        const togFiltro = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; sincFiltros(); atualizar(); };
         barrasPorCampo(cards.evento.corpo, linhas, (p) => p.evento || "", (dados.listas.eventos || []).slice(), togFiltro("evento"), estado, "evento");
         // marca e modelo com opção "só vidros"
         const soVidros = (p) => p.evento === "VIDROS" || p.setor === "VIDROS";
@@ -659,6 +666,7 @@
       if (s.fsga) s.fsga.value = estado.fsga === null ? "*" : estado.fsga;
       if (s.evento) s.evento.value = estado.evento;
       if (s.cobertura) s.cobertura.value = estado.cobertura;
+      if (s.uf) s.uf.value = estado.uf;
       if (s.cidade && s.cidade.tagName === "SELECT") s.cidade.value = estado.cidade;
     }
     atualizar();

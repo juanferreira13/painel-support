@@ -70,6 +70,7 @@
       pessoas: "analistas",
       modelo: "pendencia",      // PREENCHER / ATRASADO / EM DIA / CONCLUÍDO
       pessoaCampo: "analista",  // coluna de pessoa (vazio = responsável no SIGA)
+      dataCampo: "dataComunicado",   // filtro de período dos analistas = DATA COMUNICADO EVENTO
       // campos editáveis (preenchimento) — refletem PARTICIPAÇÃO, OBSERVAÇÃO + acompanhamento
       campos: [
         { id: "analista", rot: "Analista", tipo: "select", fonte: "analistas", vazio: "Responsável no SIGA" },
@@ -110,6 +111,7 @@
       modelo: "regulacao",       // usa statusRegulacao
       pessoaCampo: "responsavel",            // regulador orçamentista (quem fez a vistoria/orçamento)
       rotuloPessoa: "Reg. orçamentista",
+      dataCampo: "dataAutorizado",   // filtro de período dos reguladores = DATA AUTORIZADO
       analistaCampo: "reguladorAnalista",    // regulador analista (casado por ID EXTERNO no integrador)
       temMatriz: true,
       // único setor que mantém preenchimento (os demais atualizam só o SGA).
@@ -152,6 +154,7 @@
       pessoas: "consultores",
       modelo: "pendencia",
       pessoaCampo: "consultorTecnico",
+      dataCampo: "dataAutorizado",   // filtro de período dos consultores = DATA AUTORIZADO
       temOficinas: true,
       campos: [
         { id: "consultorTecnico", rot: "Consultor técnico", tipo: "select", fonte: "consultores", vazio: "Não encontrado" },
