@@ -462,7 +462,7 @@
     if (cfg.modelo === "pendencia") {
       cards.pessoas = cartao("sete", "Por " + cfg.rotulo.replace(/e?s$/, "").toLowerCase(), "Clique em uma linha para filtrar.");
       cards.situacao = GS.FONTE.live
-        ? cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA.")
+        ? cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA. Clique para ver os processos.")
         : cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
       grade.append(cards.situacao.c, cards.pessoas.c);
       cards.evento = cartao("cinco", "Por evento", "Tipo de evento do setor. Clique para filtrar.");
@@ -531,7 +531,7 @@
       // gráficos
       if (cfg.modelo === "pendencia") {
         if (GS.FONTE.live)
-          barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.statusSga), null, null, estado, "_semfiltro", 10);
+          barrasPorCampo(cards.situacao.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; atualizar(); }, estado, "fsga", 12);
         else
           barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
