@@ -102,6 +102,7 @@
         { rot: "Placa", key: "placaSiga", classe: "fixo" },
         { rot: "Reg. orçamentista", key: "responsavel" },
         { rot: "Reg. analista", key: "reguladorAnalista" },
+        { rot: "Cidade", key: "cidade", classe: "fixo" },
         { rot: "Status regulação", key: "statusRegulacao" },
         { rot: "Vistoria inicial", key: "dataRegulagem", classe: "fixo", tipo: "data" },
         { rot: "Mês ref.", key: "mesReferencia", classe: "fixo" },

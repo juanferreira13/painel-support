@@ -336,6 +336,7 @@
       if (cfg.modelo === "regulacao") {
         if (estado.statusRegulacao && p.statusRegulacao !== estado.statusRegulacao) return false;
         if (estado.reguladorAnalista && norm(p.reguladorAnalista) !== estado.reguladorAnalista) return false;
+        if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
       }
       if (estado.soAtrasados && !estaAtrasado(p, dados)) return false;
       if (termo) {
@@ -483,8 +484,9 @@
       });
       cards.pessoas.c.classList.add("com-alternar");
       cards.pessoas.c.insertBefore(dimTog, cards.pessoas.c.firstChild);
-      grade.append(cards.status.c, cards.pessoas.c);
-      if (cfg.temMatriz) { cards.matriz = cartao("", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
+      cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
+      grade.append(cards.status.c, cards.pessoas.c, cards.cidade.c);
+      if (cfg.temMatriz) { cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
     } else { // geral (sinistro)
       cards.mes = cartao("sete", "Eventos por mês", "Pela competência do evento.");
       cards.setor = cartao("cinco", "Por setor", "Distribuição dos eventos entre os setores. Clique para filtrar.");
@@ -539,6 +541,7 @@
           else estado.pessoa = estado.pessoa === nome ? "" : nome;
           sincFiltros(); atualizar();
         }, nomeDe, dimAna ? "reguladorAnalista" : "pessoa");
+        if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, (k) => { estado.cidade = estado.cidade === k ? "" : k; atualizar(); }, estado, "cidade", 12);
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
       } else { // geral (sinistro)
         const eixo = [...new Set(linhas.map((p) => p.competencia))].sort();
