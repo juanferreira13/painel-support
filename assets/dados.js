@@ -17,6 +17,11 @@
   // Marca a origem dos dados (o selo no topo mostra isto).
   GS.FONTE = { tipo: "demo", rotulo: "Dados de demonstração", live: false };
 
+  // Papel do usuário logado e setores que ele pode ver (vem do /api/dados ao vivo).
+  // null = sem restrição (modo demo / admin): mostra tudo.
+  GS.PAPEL = null;
+  GS.PERMITIDOS = null;
+
   /* ----------------------------------------------------------- PRNG com semente (estável entre recargas) */
   function rng(semente) {
     let s = semente >>> 0;
@@ -236,6 +241,8 @@
         const j = await r.json();
         if (!j || j.configurado === false || !Array.isArray(j.processos)) throw new Error("sem dados ao vivo");
         LIVE = { processos: j.processos, listas: Object.assign({}, LISTAS_DEMO, j.listas || {}), gerado: j.gerado || GS.GERADO };
+        GS.PAPEL = j.papel || null;
+        GS.PERMITIDOS = Array.isArray(j.permitidos) && j.permitidos.length ? j.permitidos : null;
         GS.FONTE = j.fonte || { tipo: "sheets", rotulo: "Dados ao vivo (Sheets)", live: true };
         if (j.gerado) GS.GERADO = j.gerado;
         GS.DB.listas = LIVE.listas;

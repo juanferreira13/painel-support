@@ -51,17 +51,26 @@
   const divergente = (p) => p.statusSga !== "" && p.statusSiga !== p.statusSga;
 
   /* ===================================================== menu lateral + topo */
-  const NAV = [
-    { itens: [{ rota: "inicio", rotulo: "Início", icone: "inicio" }] },
-    { rot: "Dashboards", itens: GS.DASH_ORDEM.map((c) => ({ rota: "dashboard/" + c, rotulo: GS.SETORES[c].rotulo, icone: GS.SETORES[c].icone })) },
-    { rot: "Preenchimento", itens: GS.ORDEM_PREENCHIMENTO.map((c) => ({ rota: "preenchimento/" + c, rotulo: GS.SETORES[c].rotulo, icone: "preencher" })) },
-  ];
+  // Setores que o usuário logado pode ver (GS.PERMITIDOS vem do /api/dados).
+  // null = sem restrição (modo demo / admin gerencial) => mostra tudo.
+  function podeVer(chave) {
+    const perm = GS.PERMITIDOS;
+    return !perm || perm.indexOf(chave) >= 0;
+  }
+  function dashVisiveis() { return GS.DASH_ORDEM.filter(podeVer); }
+  function montarNav() {
+    return [
+      { itens: [{ rota: "inicio", rotulo: "Início", icone: "inicio" }] },
+      { rot: "Dashboards", itens: dashVisiveis().map((c) => ({ rota: "dashboard/" + c, rotulo: GS.SETORES[c].rotulo, icone: GS.SETORES[c].icone })) },
+      { rot: "Preenchimento", itens: GS.ORDEM_PREENCHIMENTO.filter(podeVer).map((c) => ({ rota: "preenchimento/" + c, rotulo: GS.SETORES[c].rotulo, icone: "preencher" })) },
+    ];
+  }
 
   function construirShell() {
     const lateral = document.getElementById("lateral");
     const nav = lateral.querySelector("nav");
     nav.replaceChildren();
-    for (const grupo of NAV) {
+    for (const grupo of montarNav()) {
       if (!grupo.itens.length) continue;   // não mostra grupo vazio (ex.: Preenchimento quando não há)
       if (grupo.rot) nav.append(el("div", { class: "grupo-rot" }, grupo.rot));
       for (const it of grupo.itens) {
@@ -419,18 +428,17 @@
     const h1 = el("h1", { html: 'Painel do <em>sinistro</em>, tudo em um só lugar.' });
     const p = el("p", { class: "lede" }, "Dashboards e preenchimento dos setores de analistas, reguladores e consultores — no mesmo padrão visual da conferência e do acompanhamento, integrados em uma única página.");
     const acoes = el("div", { class: "acoes" });
-    const b1 = el("a", { class: "btn-hero cheio", href: "#/dashboard/sinistro" }); b1.append(el("span", null, "Ver dashboards"), svgIcone(ICONES.seta, "#2d350a", 16));
-    const b2 = el("a", { class: "btn-hero vazado", href: "#/dashboard/reguladores" }, "Reguladores (vistoria inicial)");
-    acoes.append(b1, b2);
+    const alvoDash = dashVisiveis()[0] || "sinistro";
+    const b1 = el("a", { class: "btn-hero cheio", href: "#/dashboard/" + alvoDash }); b1.append(el("span", null, "Ver dashboards"), svgIcone(ICONES.seta, "#2d350a", 16));
+    acoes.append(b1);
+    if (podeVer("reguladores")) acoes.append(el("a", { class: "btn-hero vazado", href: "#/dashboard/reguladores" }, "Reguladores (vistoria inicial)"));
     const nums = el("div", { class: "hero-nums" });
     const cel = (v, t) => { const n = el("div", { class: "n" }); n.append(el("b", null, v), el("span", null, t)); return n; };
-    nums.append(
-      cel(nf.format(r.total), "processos em aberto"),
-      cel(nf.format(r.porSetor.analistas), "com os analistas"),
-      cel(nf.format(r.porSetor.reguladores), "com os reguladores"),
-      cel(nf.format(r.porSetor.consultores), "com os consultores"),
-      cel(nf.format(r.aPreencher), "a preencher"),
-    );
+    nums.append(cel(nf.format(r.total), "processos em aberto"));
+    if (podeVer("analistas")) nums.append(cel(nf.format(r.porSetor.analistas), "com os analistas"));
+    if (podeVer("reguladores")) nums.append(cel(nf.format(r.porSetor.reguladores), "com os reguladores"));
+    if (podeVer("consultores")) nums.append(cel(nf.format(r.porSetor.consultores), "com os consultores"));
+    nums.append(cel(nf.format(r.aPreencher), "a preencher"));
     hw.append(etq, h1, p, acoes, nums);
     hero.append(hw);
 
@@ -439,8 +447,10 @@
     const sw = el("div", { class: "largura" });
     sw.append(el("h2", null, "Funcionalidades"));
     const grade = el("div", { class: "cartoes-grade" });
-    const cartoes = [{ rota: "dashboard/sinistro", icone: "sinistro", titulo: "Dashboard · Sinistro", desc: GS.SETORES.sinistro.ledeDash, tags: ["Visão geral", "Matriz SIGA×SGA", "Negativas"] }];
+    const cartoes = [];
+    if (podeVer("sinistro")) cartoes.push({ rota: "dashboard/sinistro", icone: "sinistro", titulo: "Dashboard · Sinistro", desc: GS.SETORES.sinistro.ledeDash, tags: ["Visão geral", "Matriz SIGA×SGA", "Negativas"] });
     for (const chave of GS.ORDEM_SETORES) {
+      if (!podeVer(chave)) continue;
       const cfg = GS.SETORES[chave];
       cartoes.push({ rota: "dashboard/" + chave, icone: cfg.icone, titulo: "Dashboard · " + cfg.rotulo, desc: cfg.ledeDash, tags: ["Indicadores", "Gráficos", "Lista"] });
       if (GS.ORDEM_PREENCHIMENTO.includes(chave))
@@ -823,6 +833,12 @@
     window.scrollTo(0, 0);
     const mount = document.getElementById("conteudo");
     const [sec, chave] = rota.split("/");
+    // bloqueio por papel: setor fora do permitido cai no primeiro dashboard liberado
+    if (sec === "dashboard" && GS.SETORES[chave] && !podeVer(chave)) {
+      const alvo = dashVisiveis()[0];
+      location.replace(alvo ? "#/dashboard/" + alvo : "#/inicio");
+      return;
+    }
     if (sec === "dashboard" && GS.SETORES[chave]) renderDashboard(chave, mount);
     else if (sec === "preenchimento" && GS.ORDEM_PREENCHIMENTO.includes(chave)) renderPreenchimento(chave, mount);
     else if (sec === "preenchimento" && GS.SETORES[chave]) { location.replace("#/dashboard/" + chave); }  // preenchimento desativado p/ este setor
@@ -832,7 +848,8 @@
   // expõe para formulario.js reaproveitar helpers
   GS._helpers = { PEND, ORDEM_PEND, selo, pendencia, pessoaDe, abertura, indicadorFixo, cartao, carregando, trilha, construirFiltros, lerFiltros, aplicarFiltros, barrasPorCampo, tabelaPessoas, colsPessoaPend, colsPessoaReg, valorColuna, listaProcessos, indicadores };
 
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener("DOMContentLoaded", async () => {
+    try { await GS.DB.garantir(); } catch (_) {}   // resolve o papel antes de montar o menu
     construirShell();
     window.addEventListener("hashchange", navegar);
     navegar();
