@@ -289,6 +289,8 @@
         campoSelect("evento", "Evento", [["", "Todos"], ...distintos("evento").filter(Boolean).map((s) => [s, s])], estado.evento);
         campoSelect("cobertura", "Cobertura", [["", "Todas"], ...distintos("cobertura").filter(Boolean).map((s) => [s, s])], estado.cobertura);
         campoSelect("cidade", "Cidade", [["", "Todas"], ...distintos("cidade").filter(Boolean).map((s) => [s, s])], estado.cidade);
+        campoSelect("cooperativa", "Cooperativa", [["", "Todas"], ...distintos("cooperativa").filter(Boolean).map((s) => [s, s])], estado.cooperativa);
+        campoSelect("consultor", "Consultor", [["", "Todos"], ...distintos("consultor").filter(Boolean).map((s) => [s, s])], estado.consultor);
       } else if (cfg.modelo === "regulacao") {
         campoSelect("reguladorAnalista", "Reg. analista", [["", "Todos"], ...(dados.listas.reguladoresAnalistas || []).map((p) => [p, p])], estado.reguladorAnalista);
         campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
@@ -308,7 +310,8 @@
     const limpar = el("button", { class: "botao claro", type: "button" }, "Limpar filtros");
     limpar.addEventListener("click", () => {
       Object.assign(estado, { pessoa: "", reguladorAnalista: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
-                              evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", tarefa: "", dataDe: "", dataAte: "" });
+                              evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataDe: "", dataAte: "",
+                              soDivergente: false, semParticipacao: false, negadoSemMotivo: false });
       const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
       for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
@@ -332,6 +335,8 @@
         if (s.evento) estado.evento = s.evento.value;
         if (s.cobertura) estado.cobertura = s.cobertura.value;
         if (s.cidade) estado.cidade = s.cidade.value;
+        if (s.cooperativa) estado.cooperativa = s.cooperativa.value;
+        if (s.consultor) estado.consultor = s.consultor.value;
       }
       if (cfg.modelo === "regulacao") { estado.statusRegulacao = s.statusRegulacao.value; if (s.reguladorAnalista) estado.reguladorAnalista = s.reguladorAnalista.value; }
     }
@@ -355,8 +360,12 @@
       if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
       if (estado.cooperativa && (p.cooperativa || "") !== estado.cooperativa) return false;
       if (estado.tarefa && (p.tarefa || "") !== estado.tarefa) return false;
+      if (estado.consultor && (p.consultor || "") !== estado.consultor) return false;
       if (estado.dataDe && (p.abertura || "") < estado.dataDe) return false;
       if (estado.dataAte && (p.abertura || "") > estado.dataAte) return false;
+      if (estado.soDivergente && !divergente(p)) return false;
+      if (estado.semParticipacao && (p.participacao || 0) > 0) return false;
+      if (estado.negadoSemMotivo && !(norm(p.statusSiga) === "NEGADO" && norm(p.statusSga) === "NEGADO" && !norm(p.classif))) return false;
       if (estado.pessoa && pessoaDe(p, cfg) !== estado.pessoa) return false;
       if (cfg.modelo === "pendencia") {
         if (estado.situacao !== null && estado.situacao !== undefined && norm(p.situacao) !== estado.situacao) return false;
@@ -471,7 +480,8 @@
     mount.replaceChildren(carregando());
     const dados = await GS.DB.carregar(chave);
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
-                     evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", tarefa: "", dataDe: "", dataAte: "", vidrosMarca: false, vidrosModelo: false };
+                     evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataDe: "", dataAte: "",
+                     soDivergente: false, semParticipacao: false, negadoSemMotivo: false, vidrosMarca: false, vidrosModelo: false };
 
     mount.replaceChildren();
     mount.append(abertura(cfg, cfg.tituloDash, cfg.ledeDash));
@@ -636,6 +646,20 @@
         const r = el("div", { class: "rotulo" }); r.append(svgIcone(ICONES[PEND[k].icone], PEND[k].cor, 15), el("span", null, PEND[k].plural));
         b.append(r, el("div", { class: "valor" }, nf.format(n[k])), el("div", { class: "nota" }, ativo ? "filtrando · clique para tirar" : pct(n[k], total) + " dos processos"));
         b.addEventListener("click", () => { estado.pend = ativo ? "" : k; if (estado._selects && estado._selects.pend) estado._selects.pend.value = estado.pend; atualizar(); });
+        itens.push(b);
+      }
+      // "acusar" (clicáveis): status divergente, sem participação, negado×negado sem motivo
+      const acusar = [
+        { k: "soDivergente", rot: "Status divergente", icone: "info", cor: "var(--aviso)", conta: linhas.filter(divergente).length },
+        { k: "semParticipacao", rot: "Sem participação", icone: "dinheiro", cor: "var(--serio)", conta: linhas.filter((p) => (p.participacao || 0) <= 0).length },
+        { k: "negadoSemMotivo", rot: "Negado sem motivo", icone: "atraso", cor: "var(--critico)", conta: linhas.filter((p) => norm(p.statusSiga) === "NEGADO" && norm(p.statusSga) === "NEGADO" && !norm(p.classif)).length },
+      ];
+      for (const a of acusar) {
+        const on = estado[a.k];
+        const b = el("button", { type: "button", class: "indicador" + (on ? " ativo" : ""), "aria-pressed": String(on) });
+        const r = el("div", { class: "rotulo" }); r.append(svgIcone(ICONES[a.icone], a.cor, 15), el("span", null, a.rot));
+        b.append(r, el("div", { class: "valor" }, nf.format(a.conta)), el("div", { class: "nota" }, on ? "filtrando · clique para tirar" : pct(a.conta, total) + " — clique para ver"));
+        b.addEventListener("click", () => { estado[a.k] = !estado[a.k]; atualizar(); });
         itens.push(b);
       }
       return itens;
