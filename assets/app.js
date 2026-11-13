@@ -290,7 +290,7 @@
     const limpar = el("button", { class: "botao claro", type: "button" }, "Limpar filtros");
     limpar.addEventListener("click", () => {
       Object.assign(estado, { pessoa: "", reguladorAnalista: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
-                              evento: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "" });
+                              evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "" });
       const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
       for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
@@ -316,17 +316,17 @@
   function aplicarFiltros(processos, cfg, dados, estado) {
     const termo = GS.semAcento(estado.busca || "");
     return processos.filter((p) => {
-      if (cfg.modelo === "geral") {
-        if (estado.setor && p.setor !== estado.setor) return false;
-        if (estado.fsiga !== null && estado.fsiga !== undefined && p.statusSiga !== estado.fsiga) return false;
-        if (estado.fsga !== null && estado.fsga !== undefined && p.statusSga !== estado.fsga) return false;
-        if (estado.evento && (p.evento || "") !== estado.evento) return false;
-        if (estado.marca && (p.marca || "") !== estado.marca) return false;
-        if (estado.modelo && (p.modelo || "") !== estado.modelo) return false;
-        if (estado.uf && (p.uf || "") !== estado.uf) return false;
-        if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
-        if (estado.cooperativa && (p.cooperativa || "") !== estado.cooperativa) return false;
-      }
+      if (cfg.modelo === "geral" && estado.setor && p.setor !== estado.setor) return false;
+      // filtros de atributo — valem em qualquer dashboard (setados por gráfico, matriz ou select)
+      if (estado.fsiga != null && p.statusSiga !== estado.fsiga) return false;
+      if (estado.fsga != null && p.statusSga !== estado.fsga) return false;
+      if (estado.evento && (p.evento || "") !== estado.evento) return false;
+      if (estado.cobertura && (p.cobertura || "") !== estado.cobertura) return false;
+      if (estado.marca && (p.marca || "") !== estado.marca) return false;
+      if (estado.modelo && (p.modelo || "") !== estado.modelo) return false;
+      if (estado.uf && (p.uf || "") !== estado.uf) return false;
+      if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
+      if (estado.cooperativa && (p.cooperativa || "") !== estado.cooperativa) return false;
       if (estado.pessoa && pessoaDe(p, cfg) !== estado.pessoa) return false;
       if (cfg.modelo === "pendencia") {
         if (estado.situacao !== null && estado.situacao !== undefined && norm(p.situacao) !== estado.situacao) return false;
@@ -336,7 +336,6 @@
       if (cfg.modelo === "regulacao") {
         if (estado.statusRegulacao && p.statusRegulacao !== estado.statusRegulacao) return false;
         if (estado.reguladorAnalista && norm(p.reguladorAnalista) !== estado.reguladorAnalista) return false;
-        if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
       }
       if (estado.soAtrasados && !estaAtrasado(p, dados)) return false;
       if (termo) {
@@ -442,7 +441,7 @@
     mount.replaceChildren(carregando());
     const dados = await GS.DB.carregar(chave);
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
-                     evento: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", vidrosMarca: false, vidrosModelo: false };
+                     evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", vidrosMarca: false, vidrosModelo: false };
 
     mount.replaceChildren();
     mount.append(abertura(cfg, cfg.tituloDash, cfg.ledeDash));
@@ -466,6 +465,11 @@
         ? cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA.")
         : cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
       grade.append(cards.situacao.c, cards.pessoas.c);
+      cards.evento = cartao("cinco", "Por evento", "Tipo de evento do setor. Clique para filtrar.");
+      cards.cobertura = cartao("cinco", "Por cobertura", "Distribuição por cobertura. Clique para filtrar.");
+      cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
+      cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Cruzamento dos status. Clique numa célula para filtrar.");
+      grade.append(cards.evento.c, cards.cobertura.c, cards.cidade.c, cards.matriz.c);
       if (cfg.temOficinas) { cards.oficinas = cartao("", "Rede de oficinas", "Oficinas homologadas, com vagas e consultor responsável."); grade.append(cards.oficinas.c); }
     } else if (cfg.modelo === "regulacao") {
       cards.status = cartao("cinco", "Por status da regulação", "Situação de cada processo. Clique para filtrar.");
@@ -531,6 +535,11 @@
         else
           barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
+        const togFil = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; atualizar(); };
+        if (cards.evento) barrasPorCampo(cards.evento.corpo, linhas, (p) => p.evento || "", null, togFil("evento"), estado, "evento", 12);
+        if (cards.cobertura) barrasPorCampo(cards.cobertura.corpo, linhas, (p) => p.cobertura || "", null, togFil("cobertura"), estado, "cobertura", 12);
+        if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, togFil("cidade"), estado, "cidade", 12);
+        if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; atualizar(); });
         if (cards.oficinas) oficinasTabela(cards.oficinas.corpo);
       } else if (cfg.modelo === "regulacao") {
         barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusRegulacao || "", dados.listas.statusReg.slice(), (k) => { estado.statusRegulacao = estado.statusRegulacao === k ? "" : k; sincFiltros(); atualizar(); }, estado, "statusRegulacao");
