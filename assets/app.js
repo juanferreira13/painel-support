@@ -274,8 +274,13 @@
       const listaPessoas = dados.listas[cfg.pessoas] || [];
       campoSelect("pessoa", cfg.rotuloPessoa || cfg.rotulo.replace(/e?s$/, ""), [["", "Todos"], ...listaPessoas.map((p) => [p, p])], estado.pessoa);
       if (cfg.modelo === "pendencia") {
+        const distintos = (chave) => [...new Set(dados.processos.map((p) => (p[chave] == null ? "" : String(p[chave]))))].sort((a, b) => a.localeCompare(b, "pt-BR"));
         campoSelect("situacao", "Situação", [["*", "Todas"], ["", "(não preenchida)"], ...dados.listas.situacoes.map((s) => [s, s])], estado.situacao);
         campoSelect("pend", "Pendência", [["", "Todas"], ["acao", "Precisam de ação"], ["ATRASADO", "Atrasados"], ["PREENCHER", "A preencher"], ["EM DIA", "Em dia"], ["CONCLUÍDO", "Concluídos"]], estado.pend);
+        campoSelect("fsga", "Status SGA", [["*", "Todos"], ...distintos("statusSga").map((s) => [s, s === "" ? "(não preenchido)" : s])], estado.fsga);
+        campoSelect("evento", "Evento", [["", "Todos"], ...distintos("evento").filter(Boolean).map((s) => [s, s])], estado.evento);
+        campoSelect("cobertura", "Cobertura", [["", "Todas"], ...distintos("cobertura").filter(Boolean).map((s) => [s, s])], estado.cobertura);
+        campoSelect("cidade", "Cidade", [["", "Todas"], ...distintos("cidade").filter(Boolean).map((s) => [s, s])], estado.cidade);
       } else if (cfg.modelo === "regulacao") {
         campoSelect("reguladorAnalista", "Reg. analista", [["", "Todos"], ...(dados.listas.reguladoresAnalistas || []).map((p) => [p, p])], estado.reguladorAnalista);
         campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
@@ -308,7 +313,13 @@
       estado.fsga = s.fsga.value === "*" ? null : s.fsga.value;
     } else {
       estado.pessoa = s.pessoa.value;
-      if (cfg.modelo === "pendencia") { estado.situacao = s.situacao.value === "*" ? null : s.situacao.value; estado.pend = s.pend.value; }
+      if (cfg.modelo === "pendencia") {
+        estado.situacao = s.situacao.value === "*" ? null : s.situacao.value; estado.pend = s.pend.value;
+        if (s.fsga) estado.fsga = s.fsga.value === "*" ? null : s.fsga.value;
+        if (s.evento) estado.evento = s.evento.value;
+        if (s.cobertura) estado.cobertura = s.cobertura.value;
+        if (s.cidade) estado.cidade = s.cidade.value;
+      }
       if (cfg.modelo === "regulacao") { estado.statusRegulacao = s.statusRegulacao.value; if (s.reguladorAnalista) estado.reguladorAnalista = s.reguladorAnalista.value; }
     }
     estado.busca = s.busca.value.trim();
@@ -531,15 +542,15 @@
       // gráficos
       if (cfg.modelo === "pendencia") {
         if (GS.FONTE.live)
-          barrasPorCampo(cards.situacao.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; atualizar(); }, estado, "fsga", 12);
+          barrasPorCampo(cards.situacao.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; sincFiltros(); atualizar(); }, estado, "fsga", 12);
         else
           barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
-        const togFil = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; atualizar(); };
+        const togFil = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; sincFiltros(); atualizar(); };
         if (cards.evento) barrasPorCampo(cards.evento.corpo, linhas, (p) => p.evento || "", null, togFil("evento"), estado, "evento", 12);
         if (cards.cobertura) barrasPorCampo(cards.cobertura.corpo, linhas, (p) => p.cobertura || "", null, togFil("cobertura"), estado, "cobertura", 12);
         if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, togFil("cidade"), estado, "cidade", 12);
-        if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; atualizar(); });
+        if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         if (cards.oficinas) oficinasTabela(cards.oficinas.corpo);
       } else if (cfg.modelo === "regulacao") {
         barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusRegulacao || "", dados.listas.statusReg.slice(), (k) => { estado.statusRegulacao = estado.statusRegulacao === k ? "" : k; sincFiltros(); atualizar(); }, estado, "statusRegulacao");
@@ -587,6 +598,9 @@
       if (s.setor) s.setor.value = estado.setor;
       if (s.fsiga) s.fsiga.value = estado.fsiga === null ? "*" : estado.fsiga;
       if (s.fsga) s.fsga.value = estado.fsga === null ? "*" : estado.fsga;
+      if (s.evento) s.evento.value = estado.evento;
+      if (s.cobertura) s.cobertura.value = estado.cobertura;
+      if (s.cidade && s.cidade.tagName === "SELECT") s.cidade.value = estado.cidade;
     }
     atualizar();
   }
