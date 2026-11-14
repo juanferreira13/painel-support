@@ -255,12 +255,11 @@ export async function carregarTudo(cfg) {
     if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
     if (p.setor === "REGULADORES") {
       const base = sigaPorProtocolo.get(norm(p.protocoloSiga));
-      // orçamentista do regulador: coluna T do SGA ou coluna AM do SIGA (ignora "Não informado"/lixo)
-      const orc = limpo(orcSgaColT.get(norm(p.protocoloSiga)) || "")
-               || limpo(orcSigaAM.get(norm(p.protocoloSiga)) || "")
-               || limpo(base ? base.regulador : "");
-      if (orc) p.responsavel = orc;
-      else if (!limpo(p.responsavel)) p.responsavel = "";
+      // orçamentista do regulador: SÓ coluna T do SGA ou coluna AM do SIGA (fontes confirmadas
+      // pelo usuário), ignorando "Não informado"/lixo. Sem fallback por cabeçalho (trazia nome
+      // errado/de outro setor). Vazio nas duas => "" => cai em "Sem orçamentista".
+      p.responsavel = limpo(orcSgaColT.get(norm(p.protocoloSiga)) || "")
+                   || limpo(orcSigaAM.get(norm(p.protocoloSiga)) || "");
       if (base) {
         if (!trim(p.tarefa)) p.tarefa = base.tarefa;                            // tarefa (etapa) vem da aba SIGA
         if (!p.diasAtraso) p.diasAtraso = base.diasAtraso;                      // dias em atraso (coluna O)
