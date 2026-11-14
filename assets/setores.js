@@ -107,7 +107,7 @@
       tituloDash: "Dashboard dos reguladores",
       tituloForm: "Preenchimento — Reguladores",
       aba: "REGULADORES / VISTORIA INICIAL",
-      ledeDash: "Processos do setor REGULADORES: regulação de sinistros, vistoria inicial e negativas. Acompanhe por regulador orçamentista e regulador analista, o que está em regulação, o que foi regularizado e os negados em aberto.",
+      ledeDash: "Processos do setor REGULADORES: regulação de sinistros, vistoria inicial e negativas. Acompanhe por regulador orçamentista e regulador analista, o que está em andamento, o que foi concluído e os negados, pelo status no SIGA e no SGA.",
       ledeForm: "Informe a data da vistoria inicial de cada processo — o único campo que não existe no SGA. O que você muda fica marcado como não salvo até enviar.",
       pessoas: "reguladores",
       modelo: "regulacao",       // usa statusRegulacao
@@ -144,7 +144,6 @@
         { rot: "Reg. analista", key: "reguladorAnalista" },
         { rot: "Cidade", key: "cidade", classe: "fixo" },
         { rot: "Oficina", key: "oficina" },
-        { rot: "Status regulação", key: "statusRegulacao" },
         { rot: "Vistoria inicial", key: "dataRegulagem", classe: "fixo", tipo: "data", editavel: true },
         { rot: "DATA AUTORIZADO", key: "dataAutorizado", classe: "fixo", tipo: "data" },
         { rot: "Dias atraso SIGA", key: "diasAtrasoSiga", classe: "num" },

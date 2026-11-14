@@ -465,7 +465,6 @@
         else if (estado.pend && estado.pend !== "acao" && pendencia(p, dados) !== estado.pend) return false;
       }
       if (cfg.modelo === "regulacao") {
-        if (estado.statusRegulacao && p.statusRegulacao !== estado.statusRegulacao) return false;
         if (estado.reguladorAnalista && norm(p.reguladorAnalista) !== estado.reguladorAnalista) return false;
         if (estado.soEtapa && cfg.etapa && !naEtapa(p, cfg)) return false;   // foco só na etapa (vistoria inicial)
       }
@@ -618,7 +617,7 @@
       grade.append(cards.evento.c, cards.cobertura.c, (cfg.porTarefa ? cards.tarefaG.c : cards.cidade.c), cards.matriz.c);
       if (cfg.temOficinas) { cards.oficinas = cartao("", "Rede de oficinas", "Oficinas homologadas, com vagas e consultor responsável."); grade.append(cards.oficinas.c); }
     } else if (cfg.modelo === "regulacao") {
-      cards.status = cartao("cinco", "Por status da regulação", "Situação de cada processo. Clique para filtrar.");
+      cards.status = cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA. Clique para filtrar.");
       cards.pessoas = cartao("sete", "Por regulador", "Orçamentista (vistoria/orçamento) ou analista (ID externo). Clique em uma linha para filtrar.");
       // alternador de dimensão: orçamentista × analista
       const dimTog = el("div", { class: "alternar-dim", role: "group", "aria-label": "Dimensão do regulador" });
@@ -696,7 +695,7 @@
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         if (cards.oficinas) oficinasTabela(cards.oficinas.corpo);
       } else if (cfg.modelo === "regulacao") {
-        barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusRegulacao || "", dados.listas.statusReg.slice(), (k) => { estado.statusRegulacao = estado.statusRegulacao === k ? "" : k; sincFiltros(); atualizar(); }, estado, "statusRegulacao");
+        barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; sincFiltros(); atualizar(); }, estado, "fsga", 12);
         const dimAna = estado.regDim === "analista";
         const nomeDe = dimAna ? (p) => norm(p.reguladorAnalista) || "(sem analista)" : null;
         tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaReg(cfg, dimAna ? "Reg. analista" : "Reg. orçamentista"), estado, (nome) => {
@@ -809,15 +808,15 @@
         indicadorFixo("Dias em aberto", media === null ? "–" : nf.format(media), "média dos eventos", "relogio"),
       ];
     }
-    // regulacao
+    // regulacao — status real de SIGA/SGA (_concluido/_negado derivados em _core)
     const total = linhas.length;
-    const conta = (s) => linhas.filter((p) => p.statusRegulacao === s).length;
-    const negAberto = linhas.filter((p) => (p.statusSiga === "NEGADO" || p.statusSga === "NEGADO")).length;
+    const concl = linhas.filter((p) => p._concluido).length;
+    const negAberto = linhas.filter((p) => p._negado).length;
+    const andamento = total - concl - negAberto;
     const itens = [
       indicadorFixo("Processos", nf.format(total), cfg.aba, cfg.icone),
-      indicadorFixo("Em regulação", nf.format(conta("Em regulação")), pct(conta("Em regulação"), total) + " do total", "reguladores"),
-      indicadorFixo("Regularizados", nf.format(conta("Regularizado")), pct(conta("Regularizado"), total) + " do total", "concluido", "var(--bom)"),
-      indicadorFixo("Aguardando vistoria", nf.format(conta("Aguardando vistoria")), pct(conta("Aguardando vistoria"), total) + " do total", "relogio", "var(--aviso)"),
+      indicadorFixo("Em andamento", nf.format(andamento), pct(andamento, total) + " do total", "reguladores"),
+      indicadorFixo("Concluídos", nf.format(concl), pct(concl, total) + " do total", "concluido", "var(--bom)"),
       indicadorFixo("Negados", nf.format(negAberto), pct(negAberto, total) + " dos processos", "atraso", "var(--critico)"),
     ];
     // tile da ETAPA (ex.: vistoria inicial): quantos aguardando; clicar foca só a etapa
@@ -861,14 +860,13 @@
     ];
   }
   function colsPessoaReg(cfg, rotulo) {
-    const c = (s) => (g) => g.filter((p) => p.statusRegulacao === s).length;
     return [
       { rot: rotulo || singular(cfg), valor: () => 0 },
       { rot: "Processos", valor: (g) => g.length },
-      { rot: "Em regulação", valor: c("Em regulação") },
-      { rot: "Regularizados", valor: c("Regularizado") },
-      { rot: "Negados", valor: (g) => g.filter((p) => p.statusSiga === "NEGADO" || p.statusSga === "NEGADO").length },
-      { rot: "Regularizado", prog: (g) => [c("Regularizado")(g), g.length] },
+      { rot: "Em andamento", valor: (g) => g.filter((p) => !p._concluido && !p._negado).length },
+      { rot: "Concluídos", valor: (g) => g.filter((p) => p._concluido).length },
+      { rot: "Negados", valor: (g) => g.filter((p) => p._negado).length },
+      { rot: "Concluído", prog: (g) => [g.filter((p) => p._concluido).length, g.length] },
     ];
   }
   function oficinasTabela(corpo) {
