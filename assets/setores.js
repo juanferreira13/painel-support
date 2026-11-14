@@ -116,6 +116,8 @@
       dataCampo: "dataAutorizado",   // filtro de período dos reguladores = DATA AUTORIZADO
       analistaCampo: "reguladorAnalista",    // regulador analista (casado por ID EXTERNO no integrador)
       temMatriz: true,
+      soSetorProprio: true,   // BI considera só processos ainda no setor reguladores (setor atual no SIGA); os que migraram ficam na planilha mas saem do BI
+
       // Etapa da vistoria inicial: engloba várias tarefas. Casamento tolerante
       // (sem acento/caixa) por trecho-chave -> rótulo curto. Ajuste as chaves se
       // os nomes das tarefas na planilha forem diferentes.

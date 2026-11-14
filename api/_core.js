@@ -255,6 +255,7 @@ export async function carregarTudo(cfg) {
     if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
     if (p.setor === "REGULADORES") {
       const base = sigaPorProtocolo.get(norm(p.protocoloSiga));
+      p.setorAtual = base ? trim(base.setor) : "";   // setor atual do processo no SIGA (p/ o BI considerar só quem ainda está com os reguladores)
       // orçamentista do regulador: SÓ coluna T do SGA ou coluna AM do SIGA (fontes confirmadas
       // pelo usuário), ignorando "Não informado"/lixo. Sem fallback por cabeçalho (trazia nome
       // errado/de outro setor). Vazio nas duas => "" => cai em "Sem orçamentista".

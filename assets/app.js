@@ -571,7 +571,14 @@
     const cfg = GS.SETORES[chave];
     trilha(["Sinistro", "Dashboards", cfg.rotulo]);
     mount.replaceChildren(carregando());
-    const dados = await GS.DB.carregar(chave);
+    let dados = await GS.DB.carregar(chave);
+    // BI do setor com soSetorProprio (reguladores): considera só os processos ainda no setor
+    // próprio (pelo SETOR atual no SIGA). Os que já migraram pra outro setor saem das contas,
+    // gráficos e do dropdown — continuam na planilha, mas fora do BI. Mantém vazio/TODOS (conservador).
+    if (cfg.soSetorProprio) {
+      const aindaNoSetor = (p) => { const s = norm(p.setorAtual || ""); return !s || s.includes("REGULAD") || s === "TODOS"; };
+      dados = Object.assign({}, dados, { processos: dados.processos.filter(aindaNoSetor) });
+    }
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                      evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataCampo: "dataComunicado", dataDe: "", dataAte: "",
                      soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, vidrosMarca: false, vidrosModelo: false };
