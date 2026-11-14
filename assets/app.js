@@ -177,7 +177,7 @@
   function listaProcessos(corpo, processos, cfg, estado, aoEditar) {
     const COLS = cfg.colunas;
     const POR_PAGINA = 40;
-    estado.lista = estado.lista || { ordem: "diasAberto", desc: true, pagina: 0 };
+    estado.lista = estado.lista || { ordem: cfg.ordemPadrao || "diasAberto", desc: true, pagina: 0 };
     const L = estado.lista;
     const tabelaWrap = el("div", { class: "rolagem" });
     const table = el("table", { class: "lista" });
@@ -343,15 +343,19 @@
         campoSelect("cooperativa", "Cooperativa", [["", "Todas"], ...distintos("cooperativa").filter(Boolean).map((s) => [s, s])], estado.cooperativa);
         campoSelect("consultor", "Consultor", [["", "Todos"], ...distintos("consultor").filter(Boolean).map((s) => [s, s])], estado.consultor);
       } else if (cfg.modelo === "regulacao") {
+        const distintos = (chave) => [...new Set(dados.processos.map((p) => (p[chave] == null ? "" : String(p[chave]))))].sort((a, b) => a.localeCompare(b, "pt-BR"));
         campoSelect("reguladorAnalista", "Reg. analista", [["", "Todos"], ...(dados.listas.reguladoresAnalistas || []).map((p) => [p, p])], estado.reguladorAnalista);
-        campoSelect("statusRegulacao", "Status", [["", "Todos"], ...dados.listas.statusReg.map((s) => [s, s])], estado.statusRegulacao);
+        campoSelect("fsiga", "Status SIGA", [["*", "Todos"], ...distintos("statusSiga").filter(Boolean).map((s) => [s, s])], estado.fsiga);
+        campoSelect("fsga", "Status SGA", [["*", "Todos"], ...distintos("statusSga").map((s) => [s, s === "" ? "(não preenchido)" : s])], estado.fsga);
       }
     }
     // filtros comuns: Estado + Tarefa + Período (data por dashboard)
     const distinto = (campo) => [...new Set(dados.processos.map((p) => (p[campo] == null ? "" : String(p[campo]))).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     const ufs = distinto("uf");
     if (ufs.length) campoSelect("uf", "Estado", [["", "Todos"], ...ufs.map((u) => [u, u])], estado.uf);
-    const tarefas = distinto("tarefa");
+    const tarefas = cfg.etapa
+      ? [...new Set(dados.processos.map((p) => tarefaBI(p, cfg)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"))
+      : distinto("tarefa");
     if (tarefas.length) campoSelect("tarefa", "Tarefa", [["", "Todas"], ...tarefas.map((t) => [t, t])], estado.tarefa);
     // data: analistas=comunicado, reguladores/consultores=autorização; gerencial escolhe entre as duas
     const NOMES_DATA = { dataComunicado: "comunicado", dataAutorizado: "autorização", abertura: "abertura" };
@@ -397,7 +401,11 @@
         if (s.cooperativa) estado.cooperativa = s.cooperativa.value;
         if (s.consultor) estado.consultor = s.consultor.value;
       }
-      if (cfg.modelo === "regulacao") { estado.statusRegulacao = s.statusRegulacao.value; if (s.reguladorAnalista) estado.reguladorAnalista = s.reguladorAnalista.value; }
+      if (cfg.modelo === "regulacao") {
+        if (s.reguladorAnalista) estado.reguladorAnalista = s.reguladorAnalista.value;
+        if (s.fsiga) estado.fsiga = s.fsiga.value === "*" ? null : s.fsiga.value;
+        if (s.fsga) estado.fsga = s.fsga.value === "*" ? null : s.fsga.value;
+      }
     }
     if (s.uf) estado.uf = s.uf.value;
     if (s.tarefa) estado.tarefa = s.tarefa.value;
@@ -416,6 +424,12 @@
     return "";
   }
   const naEtapa = (p, cfg) => !!etapaChave(p, cfg);
+  // Tarefa "de BI": no setor com etapa (reguladores), as tarefas da etapa — vistoria inicial,
+  // comunicar autorização e analisar necessidade de carro reserva — contam como uma só: "Vistoria inicial".
+  function tarefaBI(p, cfg) {
+    if (cfg && cfg.etapa && naEtapa(p, cfg)) return cfg.etapa.rotulo;
+    return p.tarefa || "";
+  }
 
   function aplicarFiltros(processos, cfg, dados, estado) {
     const termo = GS.semAcento(estado.busca || "");
@@ -432,7 +446,10 @@
       if (estado.uf && (p.uf || "") !== estado.uf) return false;
       if (estado.cidade && (p.cidade || "") !== estado.cidade) return false;
       if (estado.cooperativa && (p.cooperativa || "") !== estado.cooperativa) return false;
-      if (estado.tarefa && (p.tarefa || "") !== estado.tarefa) return false;
+      if (estado.tarefa) {
+        const tn = cfg.etapa ? tarefaBI(p, cfg) : (p.tarefa || "");
+        if (tn !== estado.tarefa && (p.tarefa || "") !== estado.tarefa) return false;
+      }
       if (estado.consultor && (p.consultor || "") !== estado.consultor) return false;
       if (estado.dataDe && (p[dcampo] || "") < estado.dataDe) return false;
       if (estado.dataAte && (p[dcampo] || "") > estado.dataAte) return false;
@@ -620,10 +637,11 @@
       cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
       grade.append(cards.status.c, cards.pessoas.c, cards.cidade.c);
       if (cfg.etapa) { cards.etapa = cartao("cinco", "Etapa · " + cfg.etapa.rotulo.toLowerCase(), "Quantos processos aguardando em cada tarefa da etapa (sem finalizados/negados). Clique numa barra para filtrar."); grade.append(cards.etapa.c); }
+      cards.vistoriasMes = cartao("sete", "Vistorias por mês", "Vistorias iniciais concluídas em cada mês, pela data preenchida pela equipe.");
+      grade.append(cards.vistoriasMes.c);
       if (cfg.temMatriz) { cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
       cards.tarefaOrc = cartao("", "Tarefa × Regulador orçamentista", "Processos em cada tarefa por orçamentista — sem finalizados/negados. Clique numa célula para filtrar.");
-      cards.regStatus = cartao("", "Regulador × Status da regulação", "Quantos processos cada regulador tem em cada status. Clique para filtrar.");
-      grade.append(cards.tarefaOrc.c, cards.regStatus.c);
+      grade.append(cards.tarefaOrc.c);
     } else { // geral (sinistro)
       cards.mes = cartao("sete", "Eventos por mês", "Pela competência do evento.");
       cards.setor = cartao("cinco", "Por setor", "Distribuição dos eventos entre os setores. Clique para filtrar.");
@@ -691,12 +709,18 @@
           const aguardando = linhas.filter((p) => naEtapa(p, cfg) && !p._concluido && !p._negado);
           barrasPorCampo(cards.etapa.corpo, aguardando, (p) => p.tarefa || "", null, (k) => { estado.tarefa = estado.tarefa === k ? "" : k; sincFiltros(); atualizar(); }, estado, "tarefa", 8);
         }
+        if (cards.vistoriasMes) {
+          const comData = linhas.filter((p) => p.dataRegulagem);
+          const mesV = (p) => String(p.dataRegulagem).slice(0, 7);
+          const eixo = [...new Set(comData.map(mesV))].filter(Boolean).sort();
+          const contaV = new Map(); for (const p of comData) { const m = mesV(p); contaV.set(m, (contaV.get(m) || 0) + 1); }
+          G.colunasMes(cards.vistoriasMes.corpo, eixo, contaV, (k) => [mesRotulo(k)]);
+        }
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         if (cards.tarefaOrc) {
           const base = linhas.filter((p) => !p._concluido && !p._negado);
-          G.matriz(cards.tarefaOrc.corpo, base, (p) => p.tarefa || "", (p) => p.responsavel || "", (a, b) => { estado.tarefa = a; estado.pessoa = b; sincFiltros(); atualizar(); }, "Tarefa", "Orçamentista");
+          G.matriz(cards.tarefaOrc.corpo, base, (p) => tarefaBI(p, cfg), (p) => p.responsavel || "", (a, b) => { estado.tarefa = a; estado.pessoa = b; sincFiltros(); atualizar(); }, "Tarefa", "Orçamentista");
         }
-        if (cards.regStatus) G.matriz(cards.regStatus.corpo, linhas, (p) => p.responsavel || "", (p) => p.statusRegulacao || "", (a, b) => { estado.pessoa = a; estado.statusRegulacao = b; sincFiltros(); atualizar(); }, "Regulador", "Status");
       } else { // geral (sinistro)
         const eixo = [...new Set(linhas.map((p) => p.competencia))].sort();
         const conta = new Map(); for (const p of linhas) conta.set(p.competencia, (conta.get(p.competencia) || 0) + 1);

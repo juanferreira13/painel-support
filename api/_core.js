@@ -195,9 +195,18 @@ export async function carregarTudo(cfg) {
 
   // Gerencial / analistas / consultores: aba SIGA (todos os sinistros)
   const getSiga = indexador(siga[0] || []);
-  const gerais = siga.slice(1)
-    .map((linha) => mapProcessoSiga((...nomes) => getSiga(linha, ...nomes)))
-    .filter((p) => p.protocoloSiga);
+  // orçamentista do regulador = coluna AM do SIGA (índice 38). Guardado por protocolo
+  // para preencher os processos dos reguladores (col AM do SIGA ou col T do SGA).
+  const AM_SIGA = 38;
+  const orcSigaAM = new Map();
+  const gerais = [];
+  for (const linha of siga.slice(1)) {
+    const p = mapProcessoSiga((...nomes) => getSiga(linha, ...nomes));
+    if (!p.protocoloSiga) continue;
+    gerais.push(p);
+    const am = trim(linha[AM_SIGA] == null ? "" : linha[AM_SIGA]);
+    if (am) orcSigaAM.set(norm(p.protocoloSiga), am);
+  }
 
   // BASE REGULADOR ANALISTA (NUMERO -> REGULADOR ANALISTA): casa o analista por protocolo
   const baseAnalista = new Map();
@@ -221,8 +230,15 @@ export async function carregarTudo(cfg) {
 
   // Reguladores: aba REGULADORES (tem REGULADOR ANALISTA e REGULADOR SGA)
   const getReg = indexador(reg[0] || []);
-  const reguladores = reg.slice(1).map((linha) => mapProcessoRegulador((...nomes) => getReg(linha, ...nomes)))
-    .filter((p) => p.protocoloSiga);
+  // orçamentista do regulador = coluna T do SGA (índice 19), guardado por protocolo
+  const T_SGA = 19;
+  const orcSgaColT = new Map();
+  const reguladores = reg.slice(1).map((linha) => {
+    const p = mapProcessoRegulador((...nomes) => getReg(linha, ...nomes));
+    const t = trim(linha[T_SGA] == null ? "" : linha[T_SGA]);
+    if (p.protocoloSiga && t) orcSgaColT.set(norm(p.protocoloSiga), t);
+    return p;
+  }).filter((p) => p.protocoloSiga);
 
   // protocolo SIGA -> processo da aba SIGA: traz "Regulador"/AM (= orçamentista),
   // Tarefa (etapa), datas e dias em atraso — campos que a aba REGULADORES pode não ter
@@ -232,13 +248,20 @@ export async function carregarTudo(cfg) {
   // base final: tudo do gerencial que NÃO é regulador + os reguladores
   const naoReg = gerais.filter((p) => p.setor !== "REGULADORES");
   const processos = naoReg.concat(reguladores.length ? reguladores : gerais.filter((p) => p.setor === "REGULADORES"));
+  const LIXO = new Set(["", "#N/A", "N/A", "#REF!", "-", "NÃO INFORMADO", "NAO INFORMADO"]);
+  const limpo = (v) => { const s = trim(v); return LIXO.has(s.toUpperCase()) ? "" : s; };
   for (const p of processos) {
     // regulador analista pela BASE (NUMERO -> analista): preenche sempre (resolve coluna duplicada/vazia)
     if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
     if (p.setor === "REGULADORES") {
       const base = sigaPorProtocolo.get(norm(p.protocoloSiga));
+      // orçamentista do regulador: coluna T do SGA ou coluna AM do SIGA (ignora "Não informado"/lixo)
+      const orc = limpo(orcSgaColT.get(norm(p.protocoloSiga)) || "")
+               || limpo(orcSigaAM.get(norm(p.protocoloSiga)) || "")
+               || limpo(base ? base.regulador : "");
+      if (orc) p.responsavel = orc;
+      else if (!limpo(p.responsavel)) p.responsavel = "";
       if (base) {
-        if (trim(base.regulador)) p.responsavel = trim(base.regulador);         // orçamentista = "Regulador" (SIGA col AM)
         if (!trim(p.tarefa)) p.tarefa = base.tarefa;                            // tarefa (etapa) vem da aba SIGA
         if (!p.diasAtraso) p.diasAtraso = base.diasAtraso;                      // dias em atraso (coluna O)
         if (!trim(p.diasAtrasoSiga)) p.diasAtrasoSiga = base.diasAtrasoSiga;
@@ -249,9 +272,6 @@ export async function carregarTudo(cfg) {
       if (!p.dataRegulagem) p.dataRegulagem = vistoriaDe(p);
     }
   }
-
-  const LIXO = new Set(["", "#N/A", "N/A", "#REF!", "-", "NÃO INFORMADO", "NAO INFORMADO"]);
-  const limpo = (v) => { const s = trim(v); return LIXO.has(s.toUpperCase()) ? "" : s; };
   const distintos = (arr, campo, filtro) => [...new Set(arr.filter(filtro || (() => true)).map((p) => limpo(p[campo])).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   // setores reais, por frequência (desc)
   const contSetor = new Map();

@@ -124,9 +124,10 @@
         chaves: [
           ["VISTORIA INICIAL", "Vistoria inicial"],
           ["COMUNICAR AUTORIZA", "Comunicar autorização"],
-          ["CARRO RESERVA", "Analisar carro reserva"],
+          ["NECESSIDADE DE CARRO RESERVA", "Analisar carro reserva"],
         ],
       },
+      ordemPadrao: "diasAtrasoSiga",   // lista ordena por dias em atraso SIGA (não pela data de abertura)
       // único setor que mantém preenchimento (os demais atualizam só o SGA).
       // Fase 2: só a Data da Vistoria Inicial — é o único campo sem lugar no SGA e
       // o único com destino real na planilha (aba BASE VISTORIA INICIAL, via /api/salvar).
@@ -150,7 +151,7 @@
         { rot: "Dias úteis autoriz.", key: "diasUteisAutorizado", classe: "num" },
         { rot: "Classif. negativa", key: "classif" },
         { rot: "Mês ref.", key: "mesReferencia", classe: "fixo" },
-        COL_DIAS, COL_SIGA, COL_SGA,
+        COL_SIGA, COL_SGA,
       ],
     },
 
