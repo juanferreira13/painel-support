@@ -65,6 +65,7 @@
     return [
       { itens: [{ rota: "inicio", rotulo: "Início", icone: "inicio" }] },
       { rot: "Dashboards", itens: dashVisiveis().map((c) => ({ rota: "dashboard/" + c, rotulo: GS.SETORES[c].rotulo, icone: GS.SETORES[c].icone })) },
+      { rot: "Cadastros", itens: [{ rota: "oficinas", rotulo: "Oficinas", icone: "oficina" }] },   // visível a todos os setores
       { rot: "Preenchimento", itens: GS.ORDEM_PREENCHIMENTO.filter(podeVer).map((c) => ({ rota: "preenchimento/" + c, rotulo: GS.SETORES[c].rotulo, icone: "preencher" })) },
     ];
   }
@@ -517,6 +518,7 @@
       if (GS.ORDEM_PREENCHIMENTO.includes(chave))
         cartoes.push({ rota: "preenchimento/" + chave, icone: "preencher", titulo: "Preenchimento · " + cfg.rotulo, desc: cfg.ledeForm, tags: ["Vistoria inicial", "Salvar", GS.FONTE.live ? "Sheets ao vivo" : "Sheets (em breve)"] });
     }
+    cartoes.push({ rota: "oficinas", icone: "oficina", titulo: "Oficinas", desc: "Cadastro das oficinas homologadas — contato, consultor responsável, endereço, segmento e situação.", tags: ["Rede", "Consultor", "Busca"] });
     for (const c of cartoes) {
       const a = el("a", { class: "cartao-nav", href: "#/" + c.rota });
       const ic = el("div", { class: "ic" }); ic.append(svgIcone(ICONES[c.icone], "var(--verde-700)", 22));
@@ -877,16 +879,16 @@
     ];
   }
   function oficinasTabela(corpo) {
-    const ofs = GS.DB.listas.oficinas;
+    const ofs = (GS.DB.listas.oficinas || []).slice(0, 200);
     const t = el("table", { class: "dados" });
     const cab = el("tr");
-    for (const h of ["Oficina", "Cidade", "UF", "Consultor", "Situação", "Vagas", "Em uso", "Disponíveis"]) cab.append(el("th", { scope: "col" }, h));
+    for (const h of ["Oficina", "Cidade", "UF", "Segmento", "Consultor", "Situação"]) cab.append(el("th", { scope: "col" }, h));
     t.appendChild(el("thead")).append(cab);
     const tb = t.appendChild(el("tbody"));
     for (const o of ofs) {
       const tr = el("tr");
-      tr.append(el("td", null, o.oficina), el("td", null, o.cidade), el("td", null, o.uf), el("td", null, o.consultor), el("td", null, o.situacao),
-        el("td", null, nf.format(o.vagas)), el("td", null, nf.format(o.quantidade)), el("td", o.disponiveis ? null : { class: "zero" }, nf.format(o.disponiveis)));
+      tr.append(el("td", null, o.oficina || o.nome || ""), el("td", null, o.cidade || ""), el("td", null, o.uf || ""),
+        el("td", null, o.segmento || ""), el("td", null, o.consultor || ""), el("td", null, o.situacao || ""));
       tb.append(tr);
     }
     const d = el("div", { class: "rolagem" }); d.append(t);
@@ -910,6 +912,133 @@
     return d;
   }
 
+  /* ===================================================== OFICINAS (página à parte) */
+  async function renderOficinas(mount) {
+    trilha(["Sinistro", "Oficinas"]);
+    mount.replaceChildren(carregando());
+    await GS.DB.garantir();
+    const todas = ((GS.DB.listas && GS.DB.listas.oficinas) || []).slice();
+    const estado = { busca: "", cidade: "", uf: "", consultor: "", situacao: "", segmento: "", ordem: "oficina", desc: false, pagina: 0 };
+    const COLS = [
+      { rot: "Oficina", key: "oficina" }, { rot: "CNPJ", key: "cnpj" }, { rot: "Telefone", key: "telefone" },
+      { rot: "E-mail", key: "email" }, { rot: "Cidade", key: "cidade" }, { rot: "UF", key: "uf" },
+      { rot: "Segmento", key: "segmento" }, { rot: "Consultor", key: "consultor" }, { rot: "Situação", key: "situacao" },
+    ];
+    const POR_PAGINA = 40;
+
+    mount.replaceChildren();
+    mount.append(abertura({ etiqueta: "Oficinas" }, "Rede de oficinas",
+      "Cadastro das oficinas — contato, consultor responsável, endereço, segmento e situação. Fonte: aba OFICINAS do gerencial."));
+
+    // --- barra de filtros ---
+    const distintos = (campo) => [...new Set(todas.map((o) => (o[campo] || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const fil = el("section", { class: "filtros", "aria-label": "Filtros" });
+    const fw = el("div", { class: "largura" });
+    const campoSel = (rotulo, chave, pares) => {
+      const lab = el("label", { class: "campo" }, rotulo);
+      const s = el("select");
+      s.replaceChildren(...pares.map(([v, t]) => { const o = el("option", { value: v }, t); if (v === estado[chave]) o.selected = true; return o; }));
+      s.addEventListener("change", () => { estado[chave] = s.value; estado.pagina = 0; desenhar(); });
+      lab.append(s); fw.append(lab);
+    };
+    campoSel("Cidade", "cidade", [["", "Todas"], ...distintos("cidade").map((c) => [c, c])]);
+    campoSel("Estado", "uf", [["", "Todos"], ...distintos("uf").map((c) => [c, c])]);
+    campoSel("Consultor", "consultor", [["", "Todos"], ...distintos("consultor").map((c) => [c, c])]);
+    campoSel("Segmento", "segmento", [["", "Todos"], ...distintos("segmento").map((c) => [c, c])]);
+    campoSel("Situação", "situacao", [["", "Todas"], ...distintos("situacao").map((c) => [c, c])]);
+    const busca = el("input", { type: "search", placeholder: "nome, CNPJ, cidade ou consultor" });
+    const labB = el("label", { class: "campo" }, "Buscar"); labB.append(busca); fw.append(labB);
+    let timer = 0;
+    busca.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { estado.busca = busca.value.trim(); estado.pagina = 0; desenhar(); }, 180); });
+    const limpar = el("button", { class: "botao claro", type: "button" }, "Limpar filtros");
+    limpar.addEventListener("click", () => { mount.replaceChildren(); renderOficinas(mount); });
+    fw.append(limpar);
+    fil.append(fw);
+    mount.append(fil);
+
+    // --- conteúdo ---
+    const area = el("div", { class: "conteudo-sec" });
+    const w = el("div", { class: "largura" });
+    const resumo = el("div", { class: "indicadores" });
+    const listaCard = el("section", { class: "cartao" });
+    const cabeca = el("div", { class: "cabeca" });
+    const tituloWrap = el("div"); tituloWrap.append(el("h2", null, "Oficinas"), el("p", { class: "sub lista-sub" }));
+    const exportar = el("button", { class: "botao", type: "button" }, "Exportar CSV");
+    cabeca.append(tituloWrap, exportar);
+    const corpo = el("div");
+    listaCard.append(cabeca, corpo);
+    w.append(resumo, listaCard);
+    area.append(w);
+    mount.append(area);
+
+    function filtrar() {
+      const termo = GS.semAcento(estado.busca || "");
+      return todas.filter((o) => {
+        if (estado.cidade && (o.cidade || "") !== estado.cidade) return false;
+        if (estado.uf && (o.uf || "") !== estado.uf) return false;
+        if (estado.consultor && (o.consultor || "") !== estado.consultor) return false;
+        if (estado.situacao && (o.situacao || "") !== estado.situacao) return false;
+        if (estado.segmento && (o.segmento || "") !== estado.segmento) return false;
+        if (termo) { const alvo = GS.semAcento([o.oficina, o.nome, o.fantasia, o.cnpj, o.cidade, o.consultor].join(" ")); if (!alvo.includes(termo)) return false; }
+        return true;
+      });
+    }
+    function desenhar() {
+      const linhas = filtrar();
+      const ufs = new Set(linhas.map((o) => o.uf).filter(Boolean));
+      const cons = new Set(linhas.map((o) => o.consultor).filter(Boolean));
+      const ativas = linhas.filter((o) => GS.norm(o.situacao).indexOf("ATIV") === 0).length;
+      resumo.replaceChildren(
+        indicadorFixo("Oficinas", nf.format(linhas.length), "no cadastro", "oficina"),
+        indicadorFixo("Ativas", nf.format(ativas), pct(ativas, linhas.length) + " do total", "concluido", "var(--bom)"),
+        indicadorFixo("Estados", nf.format(ufs.size), "UFs atendidas", "info"),
+        indicadorFixo("Consultores", nf.format(cons.size), "responsáveis", "consultores"),
+      );
+      const sinal = estado.desc ? -1 : 1;
+      const ord = [...linhas].sort((a, b) => sinal * String(a[estado.ordem] ?? "").localeCompare(String(b[estado.ordem] ?? ""), "pt-BR", { numeric: true }));
+      const paginas = Math.max(1, Math.ceil(ord.length / POR_PAGINA));
+      estado.pagina = Math.min(Math.max(0, estado.pagina), paginas - 1);
+      const pag = ord.slice(estado.pagina * POR_PAGINA, estado.pagina * POR_PAGINA + POR_PAGINA);
+      const table = el("table", { class: "lista" });
+      const thead = el("thead"), trCab = el("tr");
+      for (const col of COLS) {
+        const th = el("th", { scope: "col", tabindex: "0", "aria-sort": estado.ordem === col.key ? (estado.desc ? "descending" : "ascending") : "none" }, col.rot);
+        if (estado.ordem === col.key) th.append(el("span", { class: "seta", "aria-hidden": "true" }, estado.desc ? " ▼" : " ▲"));
+        aoAtivar(th, () => { if (estado.ordem === col.key) estado.desc = !estado.desc; else { estado.ordem = col.key; estado.desc = false; } estado.pagina = 0; desenhar(); });
+        trCab.append(th);
+      }
+      thead.append(trCab);
+      const tbody = el("tbody");
+      for (const o of pag) {
+        const tr = el("tr");
+        for (const col of COLS) {
+          const td = el("td");
+          const v = o[col.key] == null ? "" : String(o[col.key]);
+          if (col.key === "oficina" && o.site) { const a = el("a", { href: /^https?:/i.test(o.site) ? o.site : "https://" + o.site, target: "_blank", rel: "noopener" }, v || o.site); td.append(a); }
+          else td.textContent = v;
+          tr.append(td);
+        }
+        tbody.append(tr);
+      }
+      table.append(thead, tbody);
+      const rol = el("div", { class: "rolagem" }); rol.append(table);
+      const info = el("span", null, `${nf.format(ord.length)} de ${nf.format(todas.length)} oficinas`);
+      const ant = el("button", { class: "botao claro", type: "button" }, "Anterior");
+      const prox = el("button", { class: "botao claro", type: "button" }, "Próxima");
+      ant.disabled = estado.pagina <= 0; prox.disabled = estado.pagina >= paginas - 1;
+      ant.addEventListener("click", () => { estado.pagina--; desenhar(); });
+      prox.addEventListener("click", () => { estado.pagina++; desenhar(); });
+      const pagWrap = el("span", { class: "paginas" }); pagWrap.append(ant, el("span", null, ` ${estado.pagina + 1}/${paginas} `), prox);
+      const rod = el("div", { class: "rodape-lista" }); rod.append(info, pagWrap);
+      corpo.replaceChildren(rol, rod);
+      for (const s of listaCard.querySelectorAll(".lista-sub")) s.textContent = `${nf.format(ord.length)} de ${nf.format(todas.length)} oficinas, conforme os filtros.`;
+      exportar.onclick = () => GS.exportarCsv("oficinas.csv", COLS.map((c) => c.rot), ord.map((o) => COLS.map((c) => o[c.key] == null ? "" : o[c.key])));
+    }
+
+    if (!todas.length) corpo.replaceChildren(el("div", { style: "padding:24px 0;color:var(--mudo)" }, "Nenhuma oficina no cadastro (aba OFICINAS)."));
+    else desenhar();
+  }
+
   /* ===================================================== PREENCHIMENTO */
   GS.renderFormulario = null; // definido em formulario.js
   function renderPreenchimento(chave, mount) {
@@ -930,6 +1059,7 @@
     window.scrollTo(0, 0);
     const mount = document.getElementById("conteudo");
     const [sec, chave] = rota.split("/");
+    if (sec === "oficinas") { renderOficinas(mount); return; }   // página de oficinas (todos os setores)
     // bloqueio por papel: setor fora do permitido cai no primeiro dashboard liberado
     if (sec === "dashboard" && GS.SETORES[chave] && !podeVer(chave)) {
       const alvo = dashVisiveis()[0];

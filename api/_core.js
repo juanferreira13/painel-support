@@ -60,6 +60,14 @@ function paraIso(v) {
   }
   return "";
 }
+// formata CPF/CNPJ quando vier limpo (14/11 dígitos); senão devolve como está
+function cnpjFmt(v) {
+  const s = trim(v);
+  const d = s.replace(/\D/g, "");
+  if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  return s;
+}
 // "aaaa-mm-dd" -> "dd/mm/aaaa" (formato da planilha); vazio -> ""
 function isoParaBr(v) {
   const s = trim(v);
@@ -186,11 +194,12 @@ export async function carregarTudo(cfg) {
   const token = await obterToken(saJson);
 
   // Lê as abas necessárias EM PARALELO (corta a latência e evita timeout da função na Vercel).
-  const [siga, baseAna, baseVis, reg] = await Promise.all([
+  const [siga, baseAna, baseVis, reg, ofiAba] = await Promise.all([
     lerAba(token, sheetSinistro, "SIGA"),
     lerAba(token, sheetSinistro, "BASE REGULADOR ANALISTA").catch(() => []),
     lerAba(token, sheetSinistro, "BASE VISTORIA INICIAL").catch(() => []),
     sheetReguladores ? lerAba(token, sheetReguladores, "REGULADORES").catch(() => []) : Promise.resolve([]),
+    lerAba(token, sheetSinistro, "OFICINAS").catch(() => []),
   ]);
 
   // Gerencial / analistas / consultores: aba SIGA (todos os sinistros)
@@ -278,6 +287,31 @@ export async function carregarTudo(cfg) {
   for (const p of processos) { const s = trim(p.setor); if (s) contSetor.set(s, (contSetor.get(s) || 0) + 1); }
   const setoresReais = [...contSetor.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
   const ehAnalista = (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS";
+  // aba OFICINAS (cadastro) -> lista detalhada p/ a página de Oficinas. CNPJ = coluna E (índice 4).
+  const getOfi = indexador(ofiAba[0] || []);
+  const E_CNPJ = 4;
+  const oficinas = ofiAba.slice(1).map((linha) => {
+    const g = (...n) => getOfi(linha, ...n);
+    const nome = limpo(g("Nome", "Razão social", "Razao social"));
+    const fantasia = limpo(g("Nome fantasia", "Nome Fantasia", "Fantasia"));
+    return {
+      nome, fantasia, oficina: fantasia || nome,
+      cnpj: cnpjFmt(trim(linha[E_CNPJ] == null ? "" : linha[E_CNPJ]) || g("Cpf/cnpj", "CPF/CNPJ", "CNPJ", "CPF")),
+      telefone: limpo(g("Telefone", "Fone", "Celular")),
+      email: limpo(g("E-mail contato", "Email contato", "E-mail", "Email")),
+      cep: limpo(g("Cep", "CEP")),
+      logradouro: limpo(g("Logradouro", "Endereço", "Endereco")),
+      numero: limpo(g("Nº", "N°", "Numero", "Número")),
+      bairro: limpo(g("Bairro")),
+      cidade: limpo(g("Cidade")),
+      uf: limpo(g("Estado", "UF")).toUpperCase(),
+      segmento: limpo(g("Segmento")),
+      site: limpo(g("Site", "Website")),
+      situacao: limpo(g("Situação", "Situacao", "Status")).toUpperCase(),
+      consultor: limpo(g("Contato", "Consultor", "Consultor Técnico", "Consultor Tecnico")),
+    };
+  }).filter((o) => o.nome || o.fantasia || o.cnpj);
+
   const listas = {
     analistas: distintos(processos, "analista", ehAnalista).length ? distintos(processos, "analista", ehAnalista) : distintos(processos, "responsavel", ehAnalista),
     reguladores: distintos(processos, "responsavel", (p) => p.setor === "REGULADORES"),
@@ -288,7 +322,7 @@ export async function carregarTudo(cfg) {
     cooperativas: distintos(processos, "cooperativa"),
     situacoes: [], concluido: "Concluído",
     statusReg: ["Em regulação", "Regularizado", "Negado"],
-    oficinas: [],
+    oficinas,
     setores: setoresReais.length ? setoresReais : ["ANALISTAS", "VIDROS", "REGULADORES", "CONSULTORES"],
   };
   const gerado = { iso: new Date().toISOString().slice(0, 16), br: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) };
