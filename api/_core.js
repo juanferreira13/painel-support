@@ -99,7 +99,7 @@ function diasEntreIso(aIso, bIso) {
 const hojeIso = () => new Date().toISOString().slice(0, 10);
 
 /* índice de cabeçalho: nome normalizado -> coluna. getter por lista de nomes (primeiro que casar). */
-function indexador(cabecalho) {
+export function indexador(cabecalho) {
   const idx = new Map();
   cabecalho.forEach((h, i) => { const k = norm(h); if (k && !idx.has(k)) idx.set(k, i); });
   return (linha, ...nomes) => {
@@ -122,7 +122,7 @@ function sinais(statusSiga, statusSga) {
 }
 
 /* ----------------------------------------------------------- mapeamento de uma linha */
-function mapProcessoSiga(get) {
+export function mapProcessoSiga(get) {
   const abertura = paraIso(get("Data abertura", "Data abertura SIGA"));
   let diasAberto = paraNumero(get("Dias em aberto"));
   if (!diasAberto && abertura) diasAberto = Math.max(0, diasEntreIso(abertura, hojeIso()) || 0);
@@ -132,6 +132,7 @@ function mapProcessoSiga(get) {
   const setor = norm(get("SETOR")) || "ANALISTAS";
   return {
     setor,
+    porTarefa: norm(get("POR TAREFA")),
     protocoloSiga: trim(get("PROTOCOLO SIGA")) || trim(get("Número", "Numero")),
     protocoloSga: trim(get("PROTOCOLO SGA", "PROTOCOLO")),
     nome: trim(get("Nome")),
@@ -169,11 +170,12 @@ function mapProcessoSiga(get) {
     regulador: trim(get("Regulador", "REGULADOR SGA")),
     voluntario: trim(get("VOLUNTARIO", "VOLUNTÁRIO")),
     dataEvento: paraIso(get("DATA EVENTO")),
-    consultor: trim(get("CONSULTOR", "CONSULTOR TECNICO", "CONSULTOR COMERCIAL")),
+    campoAdicional: trim(get("CAMPO ADICIONAL", "CAMPO ADICIONAL EVENTO")),
+    consultor: trim(get("CONSULTOR COMERCIAL", "CONSULTOR", "VOLUNTARIO", "VOLUNTÁRIO")),
     // manuais (não vêm da aba SIGA)
     situacao: "", proxima: "", prazo: "", obs: "",
     regularizadoPor: "", dataRegulagem: "", mesReferencia: "", statusRegulacao: "",
-    consultorTecnico: "",
+    consultorTecnico: trim(get("CONSULTOR TECNICO", "CONSULTOR TÉCNICO")),
     atualizadoEm: "", atualizadoPor: "",
     _negado: negado, _concluido: concluido,
   };
@@ -225,7 +227,7 @@ export async function carregarTudo(cfg) {
       const an = trim(getB(linha, "REGULADOR ANALISTA"));
       if (num && an) baseAnalista.set(num, an);
     } }
-  const analistaDe = (p) => baseAnalista.get(norm(p.protocoloSga)) || baseAnalista.get(norm(p.protocoloSiga)) || "";
+  const analistaDe = (p) => baseAnalista.get(norm(p.protocoloSiga)) || "";
 
   // BASE VISTORIA INICIAL (NUMERO = PROTOCOLO SIGA -> DATA DA ANALISE): data da vistoria inicial
   const baseVistoria = new Map();
@@ -251,8 +253,11 @@ export async function carregarTudo(cfg) {
 
   // protocolo SIGA -> processo da aba SIGA: traz "Regulador"/AM (= orçamentista),
   // Tarefa (etapa), datas e dias em atraso — campos que a aba REGULADORES pode não ter
-  const sigaPorProtocolo = new Map();
-  for (const p of gerais) { const k = norm(p.protocoloSiga); if (k) sigaPorProtocolo.set(k, p); }
+  const sigaPorProtocolo = new Map(), sigaPorTarefa = new Map();
+  for (const p of gerais) {
+    const k = norm(p.protocoloSiga);
+    if (k) { if (!sigaPorProtocolo.has(k)) sigaPorProtocolo.set(k, p); sigaPorTarefa.set(k + "|" + norm(p.tarefa), p); }
+  }
 
   // base final: tudo do gerencial que NÃO é regulador + os reguladores
   const naoReg = gerais.filter((p) => p.setor !== "REGULADORES");
@@ -263,7 +268,8 @@ export async function carregarTudo(cfg) {
     // regulador analista pela BASE (NUMERO -> analista): preenche sempre (resolve coluna duplicada/vazia)
     if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
     if (p.setor === "REGULADORES") {
-      const base = sigaPorProtocolo.get(norm(p.protocoloSiga));
+      const k = norm(p.protocoloSiga);
+      const base = sigaPorTarefa.get(k + "|" + norm(p.tarefa)) || sigaPorProtocolo.get(k);
       p.setorAtual = base ? trim(base.setor) : "";   // setor atual do processo no SIGA (p/ o BI considerar só quem ainda está com os reguladores)
       // orçamentista do regulador: SÓ coluna T do SGA ou coluna AM do SIGA (fontes confirmadas
       // pelo usuário), ignorando "Não informado"/lixo. Sem fallback por cabeçalho (trazia nome
@@ -271,6 +277,10 @@ export async function carregarTudo(cfg) {
       p.responsavel = limpo(orcSgaColT.get(norm(p.protocoloSiga)) || "")
                    || limpo(orcSigaAM.get(norm(p.protocoloSiga)) || "");
       if (base) {
+        p.porTarefa = base.porTarefa;
+        p.consultor = base.consultor;
+        p.consultorTecnico = base.consultorTecnico;
+        p.campoAdicional = base.campoAdicional;
         if (!trim(p.tarefa)) p.tarefa = base.tarefa;                            // tarefa (etapa) vem da aba SIGA
         if (!p.diasAtraso) p.diasAtraso = base.diasAtraso;                      // dias em atraso (coluna O)
         if (!trim(p.diasAtrasoSiga)) p.diasAtrasoSiga = base.diasAtrasoSiga;
@@ -302,6 +312,7 @@ export async function carregarTudo(cfg) {
       cep: limpo(g("Cep", "CEP")),
       logradouro: limpo(g("Logradouro", "Endereço", "Endereco")),
       numero: limpo(g("Nº", "N°", "Numero", "Número")),
+      complemento: limpo(g("Complemento")),
       bairro: limpo(g("Bairro")),
       cidade: limpo(g("Cidade")),
       uf: limpo(g("Estado", "UF")).toUpperCase(),
@@ -316,7 +327,7 @@ export async function carregarTudo(cfg) {
     analistas: distintos(processos, "analista", ehAnalista).length ? distintos(processos, "analista", ehAnalista) : distintos(processos, "responsavel", ehAnalista),
     reguladores: distintos(processos, "responsavel", (p) => p.setor === "REGULADORES"),
     reguladoresAnalistas: distintos(processos, "reguladorAnalista", (p) => p.setor === "REGULADORES"),
-    consultores: distintos(processos, "responsavel", (p) => p.setor === "CONSULTORES"),
+    consultores: distintos(processos, "consultorTecnico", (p) => (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")) && p.evento !== "VIDROS"),
     marcas: distintos(processos, "marca"),
     eventos: distintos(processos, "evento"),
     cooperativas: distintos(processos, "cooperativa"),

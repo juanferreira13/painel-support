@@ -34,7 +34,7 @@ body { margin: 0; background: var(--plano); color: var(--tinta); font: 400 14px/
 .pular:focus { left: 0; }
 
 /* ----------------------------------------------------------------- estrutura */
-.app { display: grid; grid-template-columns: var(--lateral-larg) 1fr; min-height: 100vh; }
+.app { display: grid; grid-template-columns: var(--lateral-larg) minmax(0, 1fr); min-height: 100vh; }
 .area { min-width: 0; display: flex; flex-direction: column; }
 .largura { max-width: 1280px; margin: 0 auto; padding: 0 28px; width: 100%; }
 
@@ -387,7 +387,7 @@ footer.rodape b { color: #fff; font-weight: 600; }
 
 /* ----------------------------------------------------------------- responsivo */
 @media (max-width: 1000px) {
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: minmax(0, 1fr); }
   .menu-botao { display: block; }
   .lateral { position: fixed; top: 0; left: 0; width: 280px; max-width: 86vw; height: 100vh; z-index: 70;
              transform: translateX(-100%); transition: transform .22s ease; box-shadow: 0 0 40px rgba(0,0,0,.3); }
@@ -399,6 +399,8 @@ footer.rodape b { color: #fff; font-weight: 600; }
 }
 @media (max-width: 640px) {
   .largura { padding: 0 16px; }
+  .topo .largura { flex-wrap: wrap; gap: 4px 12px; padding-top: 8px; padding-bottom: 8px; }
+  .topo .dir { flex-wrap: wrap; gap: 4px 10px; }
   .campo input { min-width: 0; width: 100%; } .campo { flex: 1 1 140px; }
   .quem-barra { grid-template-columns: 1fr; }
   .processo .estado, .processo .num, .processo .st { width: auto; }

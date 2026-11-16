@@ -13,11 +13,11 @@ export const maxDuration = 30;   // Vercel: dá folga pra leitura do Sheets (evi
 const TODOS = ["sinistro", "analistas", "reguladores", "consultores"];
 
 const FONTE = { tipo: "sheets", rotulo: "Dados ao vivo (Sheets)", live: true };
-const GRUPOS = {
+export const GRUPOS = {
   sinistro: () => true,
   analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS",
   reguladores: (p) => p.setor === "REGULADORES",
-  consultores: (p) => p.setor === "CONSULTORES",
+  consultores: (p) => p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
 };
 
 const TTL = 60_000;             // 60s de cache por instância quente

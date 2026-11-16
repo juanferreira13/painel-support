@@ -42,7 +42,9 @@
     }
     return pendencia(p, dados) === "ATRASADO";
   }
-  const pessoaDe = (p, cfg) => norm(p[cfg.pessoaCampo]) || p.responsavel || "(sem responsável)";
+  const pessoaDe = (p, cfg) => cfg.pessoaCampo === "consultorTecnico"
+    ? norm(p.consultorTecnico) || "(sem consultor técnico)"
+    : norm(p[cfg.pessoaCampo]) || p.responsavel || "(sem responsável)";
   function valorColuna(p, col, cfg) {
     if (col.key === "analistaEff" || col.key === "consultorEff") return pessoaDe(p, cfg);
     if (col.tipo === "data") return dataBr(p[col.key]);
@@ -342,7 +344,7 @@
         campoSelect("cobertura", "Cobertura", [["", "Todas"], ...distintos("cobertura").filter(Boolean).map((s) => [s, s])], estado.cobertura);
         campoSelect("cidade", "Cidade", [["", "Todas"], ...distintos("cidade").filter(Boolean).map((s) => [s, s])], estado.cidade);
         campoSelect("cooperativa", "Cooperativa", [["", "Todas"], ...distintos("cooperativa").filter(Boolean).map((s) => [s, s])], estado.cooperativa);
-        campoSelect("consultor", "Consultor", [["", "Todos"], ...distintos("consultor").filter(Boolean).map((s) => [s, s])], estado.consultor);
+        campoSelect("consultor", "Consultor comercial", [["", "Todos"], ...distintos("consultor").filter(Boolean).map((s) => [s, s])], estado.consultor);
       } else if (cfg.modelo === "regulacao") {
         const distintos = (chave) => [...new Set(dados.processos.map((p) => (p[chave] == null ? "" : String(p[chave]))))].sort((a, b) => a.localeCompare(b, "pt-BR"));
         campoSelect("reguladorAnalista", "Reg. analista", [["", "Todos"], ...(dados.listas.reguladoresAnalistas || []).map((p) => [p, p])], estado.reguladorAnalista);
@@ -918,12 +920,18 @@
     mount.replaceChildren(carregando());
     await GS.DB.garantir();
     const todas = ((GS.DB.listas && GS.DB.listas.oficinas) || []).slice();
-    const estado = { busca: "", cidade: "", uf: "", consultor: "", situacao: "", segmento: "", ordem: "oficina", desc: false, pagina: 0 };
+    const estado = { busca: "", cidade: "", uf: "", consultor: "", situacao: "", segmento: "", faltante: "", ordem: "oficina", desc: false, pagina: 0 };
     const COLS = [
-      { rot: "Oficina", key: "oficina" }, { rot: "CNPJ", key: "cnpj" }, { rot: "Telefone", key: "telefone" },
-      { rot: "E-mail", key: "email" }, { rot: "Cidade", key: "cidade" }, { rot: "UF", key: "uf" },
-      { rot: "Segmento", key: "segmento" }, { rot: "Consultor", key: "consultor" }, { rot: "Situação", key: "situacao" },
+      { rot: "Oficina", key: "oficina" }, { rot: "Razão social", key: "nome" }, { rot: "Nome fantasia", key: "fantasia" },
+      { rot: "CNPJ/CPF", key: "cnpj" }, { rot: "Telefone", key: "telefone" }, { rot: "E-mail", key: "email" },
+      { rot: "CEP", key: "cep" }, { rot: "Logradouro", key: "logradouro" }, { rot: "Número", key: "numero" },
+      { rot: "Complemento", key: "complemento" }, { rot: "Bairro", key: "bairro" }, { rot: "Cidade", key: "cidade" },
+      { rot: "UF", key: "uf" }, { rot: "Segmento", key: "segmento" }, { rot: "Site", key: "site" },
+      { rot: "Consultor técnico", key: "consultor" }, { rot: "Situação", key: "situacao" },
     ];
+    // Nome fantasia pode faltar: a razão social já é usada como nome de exibição.
+    const CAMPOS_FALTANTES = COLS.filter((c) => !["nome", "fantasia", "complemento"].includes(c.key));
+    const falta = (o, chave) => !String(o[chave] || "").trim();
     const POR_PAGINA = 40;
 
     mount.replaceChildren();
@@ -940,12 +948,15 @@
       s.replaceChildren(...pares.map(([v, t]) => { const o = el("option", { value: v }, t); if (v === estado[chave]) o.selected = true; return o; }));
       s.addEventListener("change", () => { estado[chave] = s.value; estado.pagina = 0; desenhar(); });
       lab.append(s); fw.append(lab);
+      return s;
     };
     campoSel("Cidade", "cidade", [["", "Todas"], ...distintos("cidade").map((c) => [c, c])]);
     campoSel("Estado", "uf", [["", "Todos"], ...distintos("uf").map((c) => [c, c])]);
     campoSel("Consultor", "consultor", [["", "Todos"], ...distintos("consultor").map((c) => [c, c])]);
     campoSel("Segmento", "segmento", [["", "Todos"], ...distintos("segmento").map((c) => [c, c])]);
     campoSel("Situação", "situacao", [["", "Todas"], ...distintos("situacao").map((c) => [c, c])]);
+    const filtroFaltante = campoSel("Informação faltante", "faltante", [["", "Todas"], ["qualquer", "Qualquer campo"],
+      ...CAMPOS_FALTANTES.map((c) => [c.key, c.rot])]);
     const busca = el("input", { type: "search", placeholder: "nome, CNPJ, cidade ou consultor" });
     const labB = el("label", { class: "campo" }, "Buscar"); labB.append(busca); fw.append(labB);
     let timer = 0;
@@ -979,6 +990,8 @@
         if (estado.consultor && (o.consultor || "") !== estado.consultor) return false;
         if (estado.situacao && (o.situacao || "") !== estado.situacao) return false;
         if (estado.segmento && (o.segmento || "") !== estado.segmento) return false;
+        if (estado.faltante === "qualquer" && !CAMPOS_FALTANTES.some((c) => falta(o, c.key))) return false;
+        if (estado.faltante && estado.faltante !== "qualquer" && !falta(o, estado.faltante)) return false;
         if (termo) { const alvo = GS.semAcento([o.oficina, o.nome, o.fantasia, o.cnpj, o.cidade, o.consultor].join(" ")); if (!alvo.includes(termo)) return false; }
         return true;
       });
@@ -988,11 +1001,23 @@
       const ufs = new Set(linhas.map((o) => o.uf).filter(Boolean));
       const cons = new Set(linhas.map((o) => o.consultor).filter(Boolean));
       const ativas = linhas.filter((o) => GS.norm(o.situacao).indexOf("ATIV") === 0).length;
+      const semConsultor = linhas.filter((o) => falta(o, "consultor")).length;
+      const avisoConsultor = indicadorFixo("Sem consultor técnico", nf.format(semConsultor), "clique para ver oficinas", "info", "var(--aviso)");
+      const botaoConsultor = el("button", { class: "indicador" + (estado.faltante === "consultor" ? " ativo" : ""), type: "button",
+                                             "aria-pressed": estado.faltante === "consultor" ? "true" : "false" });
+      botaoConsultor.append(...avisoConsultor.childNodes);
+      botaoConsultor.addEventListener("click", () => {
+        estado.faltante = estado.faltante === "consultor" ? "" : "consultor";
+        filtroFaltante.value = estado.faltante;
+        estado.pagina = 0;
+        desenhar();
+      });
       resumo.replaceChildren(
         indicadorFixo("Oficinas", nf.format(linhas.length), "no cadastro", "oficina"),
         indicadorFixo("Ativas", nf.format(ativas), pct(ativas, linhas.length) + " do total", "concluido", "var(--bom)"),
         indicadorFixo("Estados", nf.format(ufs.size), "UFs atendidas", "info"),
         indicadorFixo("Consultores", nf.format(cons.size), "responsáveis", "consultores"),
+        botaoConsultor,
       );
       const sinal = estado.desc ? -1 : 1;
       const ord = [...linhas].sort((a, b) => sinal * String(a[estado.ordem] ?? "").localeCompare(String(b[estado.ordem] ?? ""), "pt-BR", { numeric: true }));
@@ -1014,10 +1039,15 @@
         for (const col of COLS) {
           const td = el("td");
           const v = o[col.key] == null ? "" : String(o[col.key]);
-          if (col.key === "oficina" && o.site) { const a = el("a", { href: /^https?:/i.test(o.site) ? o.site : "https://" + o.site, target: "_blank", rel: "noopener" }, v || o.site); td.append(a); }
+          if (col.key === "site" && v) { const a = el("a", { href: /^https?:/i.test(v) ? v : "https://" + v, target: "_blank", rel: "noopener" }, v); td.append(a); }
           else td.textContent = v;
           tr.append(td);
         }
+        tbody.append(tr);
+      }
+      if (!pag.length) {
+        const tr = el("tr");
+        tr.append(el("td", { colspan: String(COLS.length) }, "Nenhuma oficina corresponde aos filtros."));
         tbody.append(tr);
       }
       table.append(thead, tbody);
