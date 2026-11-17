@@ -16,11 +16,13 @@
     "ATRASADO": { rotulo: "Atrasado", plural: "Atrasados", classe: "atrasado", cor: "var(--critico)", icone: "atraso" },
     "EM DIA": { rotulo: "Em dia", plural: "Em dia", classe: "emdia", cor: "var(--cinza)", icone: "relogio" },
     "CONCLUÍDO": { rotulo: "Concluído", plural: "Concluídos", classe: "concluido", cor: "var(--bom)", icone: "concluido" },
+    "SEM TAREFA": { rotulo: "Sem tarefa SIGA", plural: "Sem tarefa SIGA", classe: "emdia", cor: "var(--cinza)", icone: "info" },
   };
-  const ORDEM_PEND = { "ATRASADO": 0, "PREENCHER": 1, "EM DIA": 2, "CONCLUÍDO": 3 };
+  const ORDEM_PEND = { "ATRASADO": 0, "PREENCHER": 1, "EM DIA": 2, "CONCLUÍDO": 3, "SEM TAREFA": 4 };
   function selo(k) { const s = el("span", { class: "selo" }); s.append(svgIcone(ICONES[PEND[k].icone], PEND[k].cor), el("span", null, PEND[k].rotulo)); return s; }
   function pendencia(p, dados) {
     if (GS.FONTE.live) {   // dados reais: atraso = coluna "Dias em atraso" (SIGA O) > 0
+      if (p._somenteSGA) return "SEM TAREFA";
       // Encerrados (finalizado×finalizado / negado×negado) = CONCLUÍDO: ficam visíveis
       // na lista (pra conferir quem esqueceu de encerrar a tarefa), mas FORA dos atrasados.
       if (p._concluido) return "CONCLUÍDO";
@@ -46,6 +48,7 @@
     ? norm(p.consultorTecnico) || "(sem consultor técnico)"
     : norm(p[cfg.pessoaCampo]) || p.responsavel || "(sem responsável)";
   function valorColuna(p, col, cfg) {
+    if (col.key === "origemProcesso") return p._somenteSGA ? "Somente SGA" : "SIGA";
     if (col.key === "analistaEff" || col.key === "consultorEff") return pessoaDe(p, cfg);
     if (col.tipo === "data") return dataBr(p[col.key]);
     if (col.tipo === "moeda") { const v = p[col.key]; return v ? moeda.format(v) : ""; }
@@ -53,7 +56,7 @@
     const v = p[col.key];
     return v === null || v === undefined ? "" : v;
   }
-  const divergente = (p) => p.statusSga !== "" && p.statusSiga !== p.statusSga;
+  const divergente = (p) => p.statusSga !== "" && p.statusSiga !== "" && p.statusSiga !== p.statusSga;
 
   /* ===================================================== menu lateral + topo */
   // Setores que o usuário logado pode ver (GS.PERMITIDOS vem do /api/dados).
@@ -624,7 +627,7 @@
       cards.cobertura = cartao("cinco", "Por cobertura", "Distribuição por cobertura. Clique para filtrar.");
       if (cfg.porTarefa) cards.tarefaG = cartao("cinco", "Por tarefa", "Processos em cada tarefa. Clique para filtrar.");
       else cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
-      cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Cruzamento dos status. Clique numa célula para filtrar.");
+      cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Cruzamento dos status. Em branco no SIGA indica ausência de status na fonte; clique numa célula para filtrar.");
       grade.append(cards.evento.c, cards.cobertura.c, (cfg.porTarefa ? cards.tarefaG.c : cards.cidade.c), cards.matriz.c);
       if (cfg.temOficinas) { cards.oficinas = cartao("", "Rede de oficinas", "Oficinas homologadas, com vagas e consultor responsável."); grade.append(cards.oficinas.c); }
     } else if (cfg.modelo === "regulacao") {
@@ -732,7 +735,7 @@
           G.matriz(cards.tarefaOrc.corpo, base, (p) => tarefaBI(p, cfg), (p) => p.responsavel || "", (a, b) => { estado.tarefa = a; estado.pessoa = b; sincFiltros(); atualizar(); }, "Tarefa", "Orçamentista");
         }
       } else { // geral (sinistro)
-        const eixo = [...new Set(linhas.map((p) => p.competencia))].sort();
+        const eixo = [...new Set(linhas.map((p) => p.competencia).filter(Boolean))].sort();
         const conta = new Map(); for (const p of linhas) conta.set(p.competencia, (conta.get(p.competencia) || 0) + 1);
         G.colunasMes(cards.mes.corpo, eixo, conta, (k) => [mesRotulo(k)]);
         barrasPorCampo(cards.setor.corpo, linhas, (p) => p.setor, (dados.listas.setores || []).slice(), (k) => { estado.setor = estado.setor === k ? "" : k; sincFiltros(); atualizar(); }, estado, "setor");
@@ -776,11 +779,11 @@
 
   function indicadores(linhas, cfg, dados, estado, atualizar) {
     if (cfg.modelo === "pendencia") {
-      const n = { "PREENCHER": 0, "ATRASADO": 0, "EM DIA": 0, "CONCLUÍDO": 0 };
+      const n = { "PREENCHER": 0, "ATRASADO": 0, "EM DIA": 0, "CONCLUÍDO": 0, "SEM TAREFA": 0 };
       for (const p of linhas) n[pendencia(p, dados)]++;
       const total = linhas.length;
       const itens = [indicadorFixo("Processos", nf.format(total), cfg.aba, cfg.icone)];
-      for (const k of (GS.FONTE.live ? ["ATRASADO", "EM DIA", "CONCLUÍDO"] : ["PREENCHER", "ATRASADO", "EM DIA", "CONCLUÍDO"])) {
+      for (const k of (GS.FONTE.live ? ["ATRASADO", "EM DIA", "CONCLUÍDO", ...(n["SEM TAREFA"] ? ["SEM TAREFA"] : [])] : ["PREENCHER", "ATRASADO", "EM DIA", "CONCLUÍDO"])) {
         const ativo = estado.pend === k;
         const b = el("button", { type: "button", class: "indicador" + (ativo ? " ativo" : ""), "aria-pressed": String(ativo) });
         const r = el("div", { class: "rotulo" }); r.append(svgIcone(ICONES[PEND[k].icone], PEND[k].cor, 15), el("span", null, PEND[k].plural));
@@ -867,7 +870,11 @@
       { rot: "Atrasados", valor: c("ATRASADO") },
       { rot: "Em dia", valor: c("EM DIA") },
       { rot: "Concluídos", valor: c("CONCLUÍDO") },
-      { rot: "Preenchido", prog: (g) => [g.filter((p) => pendencia(p, dados) !== "PREENCHER").length, g.length] },
+      ...(dados.processos.some((p) => p._somenteSGA) ? [{ rot: "Sem tarefa SIGA", valor: c("SEM TAREFA") }] : []),
+      { rot: "Preenchido", prog: (g) => {
+        const comTarefa = g.filter((p) => !p._somenteSGA);
+        return [comTarefa.filter((p) => pendencia(p, dados) !== "PREENCHER").length, comTarefa.length];
+      } },
     ];
   }
   function colsPessoaReg(cfg, rotulo) {

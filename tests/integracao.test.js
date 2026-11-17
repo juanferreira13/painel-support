@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { carregarTudo, indexador, mapProcessoSiga } from '../api/_core.js';
+import { carregarTudo, indexador, mapProcessoSiga, incorporarStatusSga } from '../api/_core.js';
 import { GRUPOS } from '../api/dados.js';
 
 test('encaminhamento por tarefa controla o acesso ao painel de consultores', () => {
@@ -21,6 +21,34 @@ test('separa consultor comercial do técnico e mantém os campos do SIGA', () =>
   assert.equal(p.porTarefa, 'CONSULTORES');
   assert.equal(p.campoAdicional, 'Detalhe');
   assert.equal(p.tarefa, 'Comprar peça');
+});
+
+test('inclui somente os três status do SGA, sem duplicar ou inventar informações SIGA', () => {
+  const processos = [{ protocoloSga: '100', protocoloSiga: '2026-001', cobertura: 'ASSOCIADO', nome: 'Alice',
+    statusSga: 'ANTIGO', statusSiga: 'AUTORIZADO', setor: 'REGULADORES' }];
+  const cab = ['PROTOCOLO', 'TIPO EVENTO', 'NOME ASSOCIADO', 'NOME TERCEIRO', 'PLACA', 'PLACA TERCEIRO',
+    'SITUACAO EVENTO', 'ANALISTA RESPONSAVEL', 'DATA COMUNICADO EVENTO'];
+  const linhas = [cab,
+    ['100', 'ASSOCIADO', 'Alice', '', 'ABC1234', '', 'EXCLUIR', 'Ana', '12/11/2026'],
+    ['100', 'TERCEIRO', 'Alice', 'Bruno', 'ABC1234', 'DEF1234', 'NOTIFICADO', 'Bia', '13/11/2026'],
+    ['200', 'ASSOCIADO', 'Carla', '', 'GHI1234', '', 'ONLINE', '', '14/11/2026'],
+    ['300', 'ASSOCIADO', 'Dora', '', 'JKL1234', '', 'FINALIZADO', '', '10/11/2026'],
+    ['200', 'ASSOCIADO', 'Carla', '', 'GHI1234', '', 'ONLINE', '', '14/11/2026']];
+  incorporarStatusSga(processos, linhas);
+  assert.equal(processos.length, 3);
+  assert.equal(processos[0].statusSga, 'EXCLUIR');
+  assert.equal(processos[0].statusSiga, 'AUTORIZADO');
+  assert.equal(GRUPOS.analistas(processos[0]), true);
+  const terceiro = processos.find((p) => p.nome === 'Bruno');
+  assert.equal(terceiro.statusSga, 'NOTIFICADO');
+  assert.equal(terceiro.statusSiga, '');
+  assert.equal(terceiro.protocoloSiga, '');
+  assert.equal(terceiro.placaSga, 'DEF1234');
+  assert.equal(terceiro.diasAberto, null);
+  assert.equal(terceiro._somenteSGA, true);
+  assert.equal(GRUPOS.analistas(terceiro), true);
+  assert.equal(GRUPOS.consultores(terceiro), false);
+  assert.equal(processos.find((p) => p.nome === 'Carla').statusSga, 'ONLINE');
 });
 
 test('cruzamento preserva tarefa, consultores e cadastro completo de oficinas', async () => {

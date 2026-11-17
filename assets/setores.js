@@ -26,6 +26,7 @@
       modelo: "geral",
       // 28 colunas na ordem/nomes exatos pedidos para o BI
       colunas: [
+        { rot: "Origem", key: "origemProcesso", classe: "fixo" },
         { rot: "Competência", key: "competencia", classe: "fixo", tipo: "mes" },
         { rot: "PROTOCOLO SIGA", key: "protocoloSiga", classe: "fixo" },
         { rot: "Cobertura", key: "cobertura", classe: "fixo" },
@@ -83,10 +84,12 @@
         { id: "obs", rot: "Observação", tipo: "textarea", largo: true, ph: "Anotações do processo" },
       ],
       colunas: [
+        { rot: "Origem", key: "origemProcesso", classe: "fixo" },
         { rot: "Protocolo SIGA", key: "protocoloSiga", classe: "fixo" },
         { rot: "Protocolo SGA", key: "protocoloSga", classe: "fixo" },
         { rot: "Nome", key: "nome" },
         { rot: "Placa", key: "placaSiga", classe: "fixo" },
+        { rot: "Placa SGA", key: "placaSga", classe: "fixo" },
         { rot: "Cobertura", key: "cobertura", classe: "fixo" },
         { rot: "Evento", key: "evento", classe: "fixo" },
         { rot: "Tarefa", key: "tarefa" },

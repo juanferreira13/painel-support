@@ -181,6 +181,66 @@ export function mapProcessoSiga(get) {
   };
 }
 
+const STATUS_APENAS_SGA = new Set(["EXCLUIR", "ONLINE", "NOTIFICADO"]);
+const chaveProcesso = (protocolo, cobertura, nome) => {
+  const partes = [protocolo, cobertura, nome].map(norm);
+  return partes.every(Boolean) ? partes.join("|") : "";
+};
+
+// Cada linha do SGA é um item (associado ou terceiro). Só incorpora os três
+// status pedidos e nunca supõe status, tarefa ou protocolo SIGA inexistentes.
+export function incorporarStatusSga(processos, tabela) {
+  const get = indexador(tabela[0] || []);
+  const porChave = new Map();
+  for (const p of processos) {
+    const k = chaveProcesso(p.protocoloSga, p.cobertura, p.nome);
+    if (k) (porChave.get(k) || porChave.set(k, []).get(k)).push(p);
+  }
+  for (const linha of tabela.slice(1)) {
+    const g = (...nomes) => get(linha, ...nomes);
+    const statusSga = norm(g("SITUACAO EVENTO", "SITUAÇÃO EVENTO"));
+    if (!STATUS_APENAS_SGA.has(statusSga)) continue;
+    const protocoloSga = trim(g("PROTOCOLO"));
+    const nome = trim(g("NOME TERCEIRO")) || trim(g("NOME ASSOCIADO"));
+    const cobertura = trim(g("TIPO EVENTO"));
+    const chave = chaveProcesso(protocoloSga, cobertura, nome);
+    if (!chave) continue; // sem identificação suficiente não inventa vínculo
+    const existentes = porChave.get(chave);
+    if (existentes) {
+      for (const p of existentes) {
+        p.statusSga = statusSga;
+        p._analistasSGA = true;
+        const atual = sinais(p.statusSiga, statusSga);
+        p._negado = atual.negado;
+        p._concluido = atual.concluido;
+        if (p.setor === "REGULADORES") p.statusRegulacao = atual.statusRegulacao;
+      }
+      continue;
+    }
+    const terceiro = !!trim(g("NOME TERCEIRO"));
+    const placa = trim(terceiro ? g("PLACA TERCEIRO") : g("PLACA"));
+    const dataComunicado = paraIso(g("DATA COMUNICADO EVENTO"));
+    const p = {
+      ...mapProcessoSiga(() => ""),
+      setor: "SEM SETOR SIGA", protocoloSiga: "", protocoloSga, nome, cobertura,
+      evento: norm(g("MOTIVO EVENTO")), statusSga, statusSiga: "", placaSiga: "", placaSga: placa,
+      analista: trim(g("ANALISTA RESPONSAVEL", "ANALISTA RESPONSÁVEL")),
+      cidade: trim(g("ASSOCIADO CIDADE")), uf: norm(g("ASSOCIADO ESTADO")),
+      cooperativa: trim(g("COOPERATIVA")), participacao: paraNumero(g("PARTICIPAÇÃO", "PARTICIPACAO")),
+      dataComunicado, competencia: dataComunicado ? dataComunicado.slice(0, 7) : "",
+      dataAutorizado: paraIso(g("DATA DA AUTORIZACAO", "DATA DA AUTORIZAÇÃO")),
+      dataEvento: paraIso(g("DATA EVENTO")), marca: norm(g("MARCA VEICULO")), modelo: norm(g("MODELO VEICULO")),
+      veiculo: trim(g("MODELO VEICULO")), oficinaSga: trim(g("NOME FORNECEDOR", "NOME FANTASIA")),
+      campoAdicional: trim(g("CAMPO ADICIONAL EVENTO")), consultor: trim(g("VOLUNTARIO", "VOLUNTÁRIO")),
+      consultorTecnico: trim(g("CONTATO")), classif: trim(g("MOTIVO NEGADO", "CLASSIFICACAO")),
+      diasAberto: null, _somenteSGA: true, _analistasSGA: true,
+    };
+    processos.push(p);
+    porChave.set(chave, [p]);
+  }
+  return processos;
+}
+
 function mapProcessoRegulador(get) {
   const p = mapProcessoSiga(get);
   p.setor = "REGULADORES";
@@ -196,12 +256,13 @@ export async function carregarTudo(cfg) {
   const token = await obterToken(saJson);
 
   // Lê as abas necessárias EM PARALELO (corta a latência e evita timeout da função na Vercel).
-  const [siga, baseAna, baseVis, reg, ofiAba] = await Promise.all([
+  const [siga, baseAna, baseVis, reg, ofiAba, sga] = await Promise.all([
     lerAba(token, sheetSinistro, "SIGA"),
     lerAba(token, sheetSinistro, "BASE REGULADOR ANALISTA").catch(() => []),
     lerAba(token, sheetSinistro, "BASE VISTORIA INICIAL").catch(() => []),
     sheetReguladores ? lerAba(token, sheetReguladores, "REGULADORES").catch(() => []) : Promise.resolve([]),
     lerAba(token, sheetSinistro, "OFICINAS").catch(() => []),
+    lerAba(token, sheetSinistro, "SGA!A:AF"),
   ]);
 
   // Gerencial / analistas / consultores: aba SIGA (todos os sinistros)
@@ -291,12 +352,13 @@ export async function carregarTudo(cfg) {
       if (!p.dataRegulagem) p.dataRegulagem = vistoriaDe(p);
     }
   }
+  incorporarStatusSga(processos, sga);
   const distintos = (arr, campo, filtro) => [...new Set(arr.filter(filtro || (() => true)).map((p) => limpo(p[campo])).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   // setores reais, por frequência (desc)
   const contSetor = new Map();
   for (const p of processos) { const s = trim(p.setor); if (s) contSetor.set(s, (contSetor.get(s) || 0) + 1); }
   const setoresReais = [...contSetor.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
-  const ehAnalista = (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS";
+  const ehAnalista = (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS" || p._analistasSGA;
   // aba OFICINAS (cadastro) -> lista detalhada p/ a página de Oficinas. CNPJ = coluna E (índice 4).
   const getOfi = indexador(ofiAba[0] || []);
   const E_CNPJ = 4;

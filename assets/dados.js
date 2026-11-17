@@ -203,7 +203,7 @@
   /* ----------------------------------------------------------- API de acesso aos dados */
   const GRUPOS = {
     sinistro: () => true,   // visão geral: todos os processos
-    analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS",
+    analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS" || !!p._analistasSGA,
     reguladores: (p) => p.setor === "REGULADORES",
     consultores: (p) => p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
   };

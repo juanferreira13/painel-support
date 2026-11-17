@@ -15,7 +15,7 @@ const TODOS = ["sinistro", "analistas", "reguladores", "consultores"];
 const FONTE = { tipo: "sheets", rotulo: "Dados ao vivo (Sheets)", live: true };
 export const GRUPOS = {
   sinistro: () => true,
-  analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS",
+  analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS" || !!p._analistasSGA,
   reguladores: (p) => p.setor === "REGULADORES",
   consultores: (p) => p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
 };
