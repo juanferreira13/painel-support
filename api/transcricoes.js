@@ -72,7 +72,8 @@ export default async function handler(req, res) {
     const texto = resposta.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('').trim();
     if (!texto) return json(res, 502, { erro: 'O Gemini não retornou uma transcrição para este áudio.' });
     const metadados = {};
-    for (const k of ['envolvido', 'nome', 'placa', 'octa', 'telefone']) metadados[k] = String(dados.metadados?.[k] || '').slice(0, 200);
+    for (const k of ['envolvido', 'nome', 'placa', 'octa', 'telefone', 'data', 'analista', 'associado']) metadados[k] = String(dados.metadados?.[k] || '').slice(0, 200);
+    if (metadados.data && !/^\d{4}-\d{2}-\d{2}$/.test(metadados.data)) return json(res, 400, { erro: 'Data inválida.' });
     if (metadados.envolvido && !['Associado', 'Condutor', 'Terceiro'].includes(metadados.envolvido)) return json(res, 400, { erro: 'Tipo de envolvido inválido.' });
     const registro = { usuario: auth.user, nome_arquivo: String(dados.nome || 'Áudio').slice(0, 200), referencia: String(dados.referencia || '').slice(0, 200), metadados, texto };
     const salvo = await fetch(db, { method: 'POST', headers: { ...headers, prefer: 'return=representation' }, body: JSON.stringify(registro) });

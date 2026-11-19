@@ -9,6 +9,9 @@
     const ref = el('input', { type: 'text', placeholder: 'Protocolo ou referência', maxlength: '200' });
     const tipo = el('select'); for (const valor of ['', 'Associado', 'Condutor', 'Terceiro']) tipo.append(el('option', { value: valor }, valor || 'Selecione o envolvido'));
     const nome = el('input', { type: 'text', placeholder: 'Nome do envolvido', maxlength: '200' });
+    const associado = el('input', { type: 'text', placeholder: 'Nome do associado', maxlength: '200' });
+    const analista = el('input', { type: 'text', placeholder: 'Analista responsável', maxlength: '200' });
+    const data = el('input', { type: 'date' });
     const placa = el('input', { type: 'text', placeholder: 'Placa', maxlength: '20' });
     const octa = el('input', { type: 'text', placeholder: 'ID Octa', maxlength: '200' });
     const telefone = el('input', { type: 'tel', placeholder: 'Telefone com DDD', maxlength: '30' });
@@ -17,8 +20,26 @@
     const lista = el('section', { class: 'cartao' });
     const campo = (rotulo, input) => { const label = el('label', { class: 'campo' }, rotulo); label.append(input); return label; };
     form.append(campo('Arquivo de áudio (até 2,5 MB)', arq), campo('Protocolo ou referência', ref),
+      campo('Data', data), campo('Analista responsável', analista), campo('Nome do associado', associado),
       campo('Tipo de envolvido', tipo), campo('Nome do envolvido', nome), campo('Placa', placa), campo('ID Octa', octa), campo('Telefone com DDD', telefone), enviar, estado);
     wrap.append(title, info, form, lista); mount.replaceChildren(wrap);
+    function gerarPdf(item) {
+      const doc = new window.jspdf.jsPDF(); const meta = item.metadados || {};
+      let y = 18;
+      function linha(texto, negrito = false) {
+        doc.setFont('helvetica', negrito ? 'bold' : 'normal');
+        for (const parte of doc.splitTextToSize(String(texto || ''), 180)) {
+          if (y > 275) { doc.addPage(); y = 18; }
+          doc.text(parte, 15, y); y += 6;
+        }
+      }
+      doc.setFontSize(16); linha('Relatório de transcrição', true); y += 2; doc.setFontSize(10);
+      const dt = /^\d{4}-\d{2}-\d{2}$/.test(meta.data || '') ? meta.data.split('-').reverse().join('/') : (meta.data || 'Não informada');
+      for (const [k, v] of [['Data', dt], ['Analista responsável', meta.analista], ['Associado', meta.associado], ['Protocolo', item.referencia], ['Envolvido', meta.envolvido], ['Nome do envolvido', meta.nome], ['Placa', meta.placa], ['ID Octa', meta.octa], ['Telefone', meta.telefone]]) linha(`${k}: ${v || 'Não informado'}`);
+      y += 4; linha('Transcrição', true); y += 2;
+      for (const paragrafo of String(item.texto || '').split('\n')) linha(paragrafo || ' ');
+      doc.save(`transcricao-${String(item.referencia || item.id || 'relatorio').replace(/[^\w-]/g, '_').slice(0, 60)}.pdf`);
+    }
     async function carregar() {
       lista.replaceChildren(el('p', null, 'Carregando transcrições...'));
       try {
@@ -29,8 +50,9 @@
           const detalhe = el('details');
           const rotulo = [item.referencia || item.nome_arquivo, item.usuario, new Date(item.criado_em).toLocaleString('pt-BR')].join(' · ');
           const meta = item.metadados || {};
-          const dados = [meta.envolvido && `${meta.envolvido}: ${meta.nome || ''}`, meta.placa && `Placa: ${meta.placa}`, meta.octa && `ID Octa: ${meta.octa}`, meta.telefone && `Telefone: ${meta.telefone}`].filter(Boolean).join('\n');
-          detalhe.append(el('summary', null, rotulo), el('p', { style: 'white-space: pre-wrap' }, dados), el('p', { style: 'white-space: pre-wrap' }, item.texto));
+          const dados = [meta.data && `Data: ${meta.data.split('-').reverse().join('/')}`, meta.analista && `Analista: ${meta.analista}`, meta.associado && `Associado: ${meta.associado}`, meta.envolvido && `${meta.envolvido}: ${meta.nome || ''}`, meta.placa && `Placa: ${meta.placa}`, meta.octa && `ID Octa: ${meta.octa}`, meta.telefone && `Telefone: ${meta.telefone}`].filter(Boolean).join('\n');
+          const pdf = el('button', { type: 'button', class: 'botao' }, 'Baixar relatório PDF'); pdf.addEventListener('click', () => gerarPdf(item));
+          detalhe.append(el('summary', null, rotulo), el('p', { style: 'white-space: pre-wrap' }, dados), el('p', { style: 'white-space: pre-wrap' }, item.texto), pdf);
           return detalhe;
         });
         lista.replaceChildren(cab, ...(blocos.length ? blocos : [el('p', null, 'Nenhuma transcrição encontrada.')]));
@@ -42,9 +64,9 @@
       enviar.disabled = true; estado.textContent = 'Transcrevendo e salvando...';
       try {
         const b64 = await new Promise((resolve, reject) => { const leitor = new FileReader(); leitor.onload = () => resolve(String(leitor.result).split(',')[1]); leitor.onerror = reject; leitor.readAsDataURL(f); });
-        const r = await fetch('/api/transcricoes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: f.name, mime: f.type, referencia: ref.value, audio: b64, metadados: { envolvido: tipo.value, nome: nome.value, placa: placa.value, octa: octa.value, telefone: telefone.value } }) });
+        const r = await fetch('/api/transcricoes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: f.name, mime: f.type, referencia: ref.value, audio: b64, metadados: { envolvido: tipo.value, nome: nome.value, placa: placa.value, octa: octa.value, telefone: telefone.value, data: data.value, analista: analista.value, associado: associado.value } }) });
         const j = await r.json(); if (!r.ok) throw new Error(j.erro || 'Não foi possível transcrever.');
-        estado.textContent = 'Transcrição salva.'; form.reset(); await carregar();
+        estado.textContent = 'Transcrição salva. O relatório PDF está disponível abaixo.'; form.reset(); await carregar();
       } catch (err) { estado.textContent = err.message || 'Não foi possível transcrever.'; }
       finally { enviar.disabled = false; }
     });

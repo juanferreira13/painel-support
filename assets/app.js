@@ -348,7 +348,7 @@
         campoSelect("cobertura", "Cobertura", [["", "Todas"], ...distintos("cobertura").filter(Boolean).map((s) => [s, s])], estado.cobertura);
         campoSelect("cidade", "Cidade", [["", "Todas"], ...distintos("cidade").filter(Boolean).map((s) => [s, s])], estado.cidade);
         campoSelect("cooperativa", "Cooperativa", [["", "Todas"], ...distintos("cooperativa").filter(Boolean).map((s) => [s, s])], estado.cooperativa);
-        campoSelect("consultor", "Consultor comercial", [["", "Todos"], ...distintos("consultor").filter(Boolean).map((s) => [s, s])], estado.consultor);
+        if (cfg.chave !== "consultores") campoSelect("consultor", "Consultor comercial", [["", "Todos"], ...distintos("consultor").filter(Boolean).map((s) => [s, s])], estado.consultor);
       } else if (cfg.modelo === "regulacao") {
         const distintos = (chave) => [...new Set(dados.processos.map((p) => (p[chave] == null ? "" : String(p[chave]))))].sort((a, b) => a.localeCompare(b, "pt-BR"));
         campoSelect("reguladorAnalista", "Reg. analista", [["", "Todos"], ...(dados.listas.reguladoresAnalistas || []).map((p) => [p, p])], estado.reguladorAnalista);
@@ -636,28 +636,12 @@
       if (cfg.temOficinas) { cards.oficinas = cartao("", "Oficinas por consultor técnico", "Quantidade de oficinas cadastradas por responsável."); grade.append(cards.oficinas.c); }
     } else if (cfg.modelo === "regulacao") {
       cards.status = cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA. Clique para filtrar.");
-      cards.pessoas = cartao("sete", "Por regulador", "Orçamentista (vistoria/orçamento) ou analista (ID externo). Clique em uma linha para filtrar.");
-      // alternador de dimensão: orçamentista × analista
-      const dimTog = el("div", { class: "alternar-dim", role: "group", "aria-label": "Dimensão do regulador" });
-      const btnOrc = el("button", { type: "button", class: "ativo", "data-dim": "orcamentista" }, "Orçamentista");
-      const btnAna = el("button", { type: "button", "data-dim": "analista" }, "Analista");
-      dimTog.append(btnOrc, btnAna);
-      for (const b of [btnOrc, btnAna]) b.addEventListener("click", () => {
-        if (estado.regDim === b.dataset.dim) return;
-        estado.regDim = b.dataset.dim;
-        btnOrc.classList.toggle("ativo", estado.regDim === "orcamentista");
-        btnAna.classList.toggle("ativo", estado.regDim === "analista");
-        atualizar();
-      });
-      cards.pessoas.c.classList.add("com-alternar");
-      cards.pessoas.c.insertBefore(dimTog, cards.pessoas.c.firstChild);
       cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
-      grade.append(cards.status.c, cards.pessoas.c, cards.cidade.c);
-      if (cfg.etapa) { cards.etapa = cartao("cinco", "Etapa · " + cfg.etapa.rotulo.toLowerCase(), "Quantos processos aguardando em cada tarefa da etapa (sem finalizados/negados). Clique numa barra para filtrar."); grade.append(cards.etapa.c); }
       cards.vistoriasMes = cartao("sete", "Vistorias iniciais por dia e regulador", "Data informada na base de vistoria inicial.");
       cards.analisesDia = cartao("sete", "Análises por dia e regulador", "Data e responsável da base de reguladores analistas.");
       cards.analisesMes = cartao("sete", "Análises por mês e regulador", "Data e responsável da base de reguladores analistas.");
-      grade.append(cards.vistoriasMes.c, cards.analisesDia.c, cards.analisesMes.c);
+      grade.append(cards.analisesDia.c, cards.analisesMes.c, cards.vistoriasMes.c, cards.status.c, cards.cidade.c);
+      if (cfg.etapa) { cards.etapa = cartao("cinco", "Etapa · " + cfg.etapa.rotulo.toLowerCase(), "Quantos processos aguardando em cada tarefa da etapa (sem finalizados/negados). Clique numa barra para filtrar."); grade.append(cards.etapa.c); }
       if (cfg.temMatriz) { cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
       cards.tarefaOrc = cartao("", "Tarefa × Regulador orçamentista", "Processos em cada tarefa por orçamentista — sem finalizados/negados. Clique numa célula para filtrar.");
       grade.append(cards.tarefaOrc.c);
@@ -726,13 +710,6 @@
         if (cards.oficinas) barrasPorCampo(cards.oficinas.corpo, dados.listas.oficinas || [], (o) => o.consultor || '', null, null, null, null, 20);
       } else if (cfg.modelo === "regulacao") {
         barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; sincFiltros(); atualizar(); }, estado, "fsga", 12);
-        const dimAna = estado.regDim === "analista";
-        const nomeDe = dimAna ? (p) => norm(p.reguladorAnalista) || "(sem analista)" : null;
-        tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaReg(cfg, dimAna ? "Reg. analista" : "Reg. orçamentista"), estado, (nome) => {
-          if (dimAna) estado.reguladorAnalista = (estado.reguladorAnalista === nome || nome === "(sem analista)") ? "" : nome;
-          else estado.pessoa = estado.pessoa === nome ? "" : nome;
-          sincFiltros(); atualizar();
-        }, nomeDe, dimAna ? "reguladorAnalista" : "pessoa");
         if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, (k) => { estado.cidade = estado.cidade === k ? "" : k; atualizar(); }, estado, "cidade", 12);
         if (cards.etapa) {
           const aguardando = linhas.filter((p) => naEtapa(p, cfg) && !p._concluido && !p._negado);
