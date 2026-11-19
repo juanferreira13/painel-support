@@ -54,11 +54,21 @@ function lerUsuarios(env) {
     const adm = env.VIEW_USER || "support";
     if (!mapa[adm]) mapa[adm] = { senha: String(env.VIEW_PASSWORD), papel: "gerencial" };
   }
+  try {
+    const adicionais = JSON.parse(env.VIEW_EXTRA_USERS || "{}");
+    if (adicionais && typeof adicionais === "object" && !Array.isArray(adicionais)) {
+      for (const [u, v] of Object.entries(adicionais)) {
+        if (!Object.hasOwn(mapa, u) && v && typeof v === "object") {
+          mapa[u] = { senha: String(v.senha || ""), papel: String(v.papel || "") };
+        }
+      }
+    }
+  } catch (_) { /* acessos adicionais inválidos não modificam os existentes */ }
   return mapa;
 }
 
 export function temUsuarios(env) {
-  return !!(env && (env.VIEW_USERS || env.VIEW_PASSWORD));
+  return !!(env && (env.VIEW_USERS || env.VIEW_PASSWORD || env.VIEW_EXTRA_USERS));
 }
 
 // Valida o header Authorization. Devolve { user, papel, permitidos } ou null.
