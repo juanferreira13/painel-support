@@ -180,6 +180,7 @@
     }
     const ordem = [...geral.entries()].sort((x, y) => (x[0] === "") - (y[0] === "") || y[1] - x[1]).map(([s]) => s);
     const linhasM = ordem.filter((s) => porA.has(s)), colunas = ordem.filter((s) => porB.has(s));
+    if (linhasM.every((s) => /^\d{4}-\d{2}(?:-\d{2})?$/.test(s))) linhasM.sort().reverse();
     const max = Math.max(...n.values());
     const nivel = (v) => (v ? Math.max(1, Math.ceil((5 * Math.log(1 + v)) / Math.log(1 + max))) : 0);
     const t = el("table", { class: "matriz" });
@@ -194,8 +195,10 @@
         const v = n.get(a + "\u0001" + b) || 0;
         const td = el("td", { class: "n" + nivel(v) + (v ? " celula" : "") + (v && a === b ? " igual" : "") }, v ? nf.format(v) : "·");
         if (v) {
+          if (aoClicar) {
           td.setAttribute("tabindex", "0"); td.setAttribute("role", "button");
           td.setAttribute("aria-label", `${rotA} ${vazio(a)}, ${rotB} ${vazio(b)}: ${v}. Filtrar`);
+          }
           comDica(td, () => [nf.format(v) + " processos", [rotA + ": " + vazio(a), rotB + ": " + vazio(b), pct1(v, linhas.length) + " do filtrado"]]);
           if (aoClicar) aoAtivar(td, () => aoClicar(a, b));
         }

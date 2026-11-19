@@ -8,6 +8,7 @@
  * Protegido pela senha do site (middleware).
  * ------------------------------------------------------------------------- */
 import { salvarVistoria } from "./_core.js";
+import { autenticar } from "./_auth.js";
 
 function json(res, status, obj) {
   res.statusCode = status;
@@ -26,6 +27,12 @@ async function lerCorpo(req) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return json(res, 405, { erro: "use POST" });
+  const auth = autenticar(req.headers?.authorization, process.env);
+  if (!auth) return json(res, 401, { erro: "Autenticação necessária." });
+  if (!auth.permitidos.includes('reguladores')) return json(res, 403, { erro: "Sem acesso à vistoria." });
+  if (!String(req.headers?.['content-type'] || '').toLowerCase().startsWith('application/json')) return json(res, 415, { erro: 'Envie JSON.' });
+  try { if (req.headers?.origin && new URL(req.headers.origin).host !== req.headers.host) return json(res, 403, { erro: 'Origem não autorizada.' }); }
+  catch { return json(res, 403, { erro: 'Origem não autorizada.' }); }
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const sheetSinistro = process.env.SHEET_SINISTRO;
   if (!saJson || !sheetSinistro) return json(res, 501, { configurado: false, erro: "GOOGLE_SERVICE_ACCOUNT_JSON / SHEET_SINISTRO ausentes." });
@@ -37,11 +44,19 @@ export default async function handler(req, res) {
   // Fase 2: só a Data da Vistoria Inicial. Última data por protocolo vence.
   const porProt = new Map();
   for (const r of registros) {
-    if (!r || r.campo !== "dataRegulagem") continue;
+    if (!r || !['dataRegulagem', 'responsavelVistoria'].includes(r.campo)) continue;
     const prot = String(r.protocolo || "").trim();
-    if (prot) porProt.set(prot, String(r.valor || "").trim());
+    if (prot) {
+      const item = porProt.get(prot) || { protocolo: prot };
+      if (r.campo === 'dataRegulagem') {
+        const valor = String(r.valor || '').trim();
+        if (valor && (!/^\d{4}-\d{2}-\d{2}$/.test(valor) || Number.isNaN(Date.parse(valor)))) return json(res, 400, { erro: 'Data de vistoria inválida.' });
+        item.dataIso = valor;
+      } else item.responsavel = String(r.valor || '').trim().slice(0, 150);
+      porProt.set(prot, item);
+    }
   }
-  const writes = [...porProt.entries()].map(([protocolo, dataIso]) => ({ protocolo, dataIso }));
+  const writes = [...porProt.values()];
   if (!writes.length) return json(res, 200, { ok: true, atualizados: 0, criados: 0, ignorados: registros.length });
 
   try {

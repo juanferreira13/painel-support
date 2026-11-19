@@ -71,6 +71,7 @@
       { itens: [{ rota: "inicio", rotulo: "Início", icone: "inicio" }] },
       { rot: "Dashboards", itens: dashVisiveis().map((c) => ({ rota: "dashboard/" + c, rotulo: GS.SETORES[c].rotulo, icone: GS.SETORES[c].icone })) },
       { rot: "Cadastros", itens: [{ rota: "oficinas", rotulo: "Oficinas", icone: "oficina" }] },   // visível a todos os setores
+      { itens: [{ rota: "transcricoes", rotulo: "Transcrições", icone: "preencher" }] },
       { rot: "Preenchimento", itens: GS.ORDEM_PREENCHIMENTO.filter(podeVer).map((c) => ({ rota: "preenchimento/" + c, rotulo: GS.SETORES[c].rotulo, icone: "preencher" })) },
     ];
   }
@@ -592,8 +593,9 @@
 
     // edição inline (ex.: Data da Vistoria Inicial no dashboard dos reguladores) -> grava no Sheets
     async function aoEditarCelula(p, campo, valor) {
-      p[campo] = valor;
+      const anterior = p[campo]; p[campo] = valor;
       const res = await GS.DB.salvarValores([{ protocolo: p.protocoloSiga, campo, valor }]);
+      if (res && res.ok === false) p[campo] = anterior;
       return !(res && res.ok === false);
     }
 
@@ -613,11 +615,13 @@
 
     // monta a grade conforme o setor
     const cards = {};
+    if (chave === 'analistas' || chave === 'sinistro') {
+      cards.especiais = cartao('cinco', 'Status exclusivos do SGA', 'Contagem geral de itens EXCLUIR, ONLINE e NOTIFICADO; não compõe a produção individual.');
+      grade.append(cards.especiais.c);
+    }
     if (cfg.modelo === "pendencia") {
       cards.pessoas = cartao("sete", "Por " + cfg.rotulo.replace(/e?s$/, "").toLowerCase(), "Clique em uma linha para filtrar.");
-      if (cfg.semPorStatus) {                 // analistas: a matriz SIGA×SGA já mostra o status
-        grade.append(cards.pessoas.c);
-      } else {
+      {
         cards.situacao = GS.FONTE.live
           ? cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA. Clique para ver os processos.")
           : cartao("cinco", "Por situação", "Situação informada pela equipe. Clique para filtrar.");
@@ -629,7 +633,7 @@
       else cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
       cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Cruzamento dos status. Em branco no SIGA indica ausência de status na fonte; clique numa célula para filtrar.");
       grade.append(cards.evento.c, cards.cobertura.c, (cfg.porTarefa ? cards.tarefaG.c : cards.cidade.c), cards.matriz.c);
-      if (cfg.temOficinas) { cards.oficinas = cartao("", "Rede de oficinas", "Oficinas homologadas, com vagas e consultor responsável."); grade.append(cards.oficinas.c); }
+      if (cfg.temOficinas) { cards.oficinas = cartao("", "Oficinas por consultor técnico", "Quantidade de oficinas cadastradas por responsável."); grade.append(cards.oficinas.c); }
     } else if (cfg.modelo === "regulacao") {
       cards.status = cartao("cinco", "Por status (SGA)", "Distribuição pelo status no SGA. Clique para filtrar.");
       cards.pessoas = cartao("sete", "Por regulador", "Orçamentista (vistoria/orçamento) ou analista (ID externo). Clique em uma linha para filtrar.");
@@ -650,8 +654,10 @@
       cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
       grade.append(cards.status.c, cards.pessoas.c, cards.cidade.c);
       if (cfg.etapa) { cards.etapa = cartao("cinco", "Etapa · " + cfg.etapa.rotulo.toLowerCase(), "Quantos processos aguardando em cada tarefa da etapa (sem finalizados/negados). Clique numa barra para filtrar."); grade.append(cards.etapa.c); }
-      cards.vistoriasMes = cartao("sete", "Vistorias por mês", "Vistorias iniciais concluídas em cada mês, pela data preenchida pela equipe.");
-      grade.append(cards.vistoriasMes.c);
+      cards.vistoriasMes = cartao("sete", "Vistorias iniciais por dia e regulador", "Data informada na base de vistoria inicial.");
+      cards.analisesDia = cartao("sete", "Análises por dia e regulador", "Data e responsável da base de reguladores analistas.");
+      cards.analisesMes = cartao("sete", "Análises por mês e regulador", "Data e responsável da base de reguladores analistas.");
+      grade.append(cards.vistoriasMes.c, cards.analisesDia.c, cards.analisesMes.c);
       if (cfg.temMatriz) { cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
       cards.tarefaOrc = cartao("", "Tarefa × Regulador orçamentista", "Processos em cada tarefa por orçamentista — sem finalizados/negados. Clique numa célula para filtrar.");
       grade.append(cards.tarefaOrc.c);
@@ -690,6 +696,15 @@
 
     function atualizar() {
       const linhas = aplicarFiltros(dados.processos, cfg, dados, estado);
+      if (cards.especiais) {
+        const vistos = new Set();
+        const especiais = dados.processos.filter((p) => {
+          if (!['EXCLUIR', 'ONLINE', 'NOTIFICADO'].includes(norm(p.statusSga))) return false;
+          const k = [p.protocoloSga, p.cobertura, p.nome].map(norm).join('|');
+          if (vistos.has(k)) return false; vistos.add(k); return true;
+        });
+        barrasPorCampo(cards.especiais.corpo, especiais, (p) => norm(p.statusSga), ['EXCLUIR', 'ONLINE', 'NOTIFICADO']);
+      }
       // indicadores
       resumo.replaceChildren(...indicadores(linhas, cfg, dados, estado, atualizar));
       // gráficos
@@ -700,14 +715,15 @@
           else
             barrasPorCampo(cards.situacao.corpo, linhas, (p) => norm(p.situacao), [...dados.listas.situacoes, ""], (k) => { estado.situacao = estado.situacao === k ? null : k; sincFiltros(); atualizar(); }, estado, "situacao");
         }
-        tabelaPessoas(cards.pessoas.corpo, linhas, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
+        const individuais = chave === 'analistas' ? linhas.filter((p) => !p._analistasSGA) : linhas;
+        tabelaPessoas(cards.pessoas.corpo, individuais, cfg, colsPessoaPend(dados, cfg), estado, (nome) => { estado.pessoa = estado.pessoa === nome ? "" : nome; sincFiltros(); atualizar(); });
         const togFil = (chave) => (k) => { estado[chave] = estado[chave] === k ? "" : k; sincFiltros(); atualizar(); };
         if (cards.tarefaG) barrasPorCampo(cards.tarefaG.corpo, linhas, (p) => p.tarefa || "", null, togFil("tarefa"), estado, "tarefa", 12);
         if (cards.evento) barrasPorCampo(cards.evento.corpo, linhas, (p) => p.evento || "", null, togFil("evento"), estado, "evento", 12);
         if (cards.cobertura) barrasPorCampo(cards.cobertura.corpo, linhas, (p) => p.cobertura || "", null, togFil("cobertura"), estado, "cobertura", 12);
         if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, togFil("cidade"), estado, "cidade", 12);
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
-        if (cards.oficinas) oficinasTabela(cards.oficinas.corpo);
+        if (cards.oficinas) barrasPorCampo(cards.oficinas.corpo, dados.listas.oficinas || [], (o) => o.consultor || '', null, null, null, null, 20);
       } else if (cfg.modelo === "regulacao") {
         barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; sincFiltros(); atualizar(); }, estado, "fsga", 12);
         const dimAna = estado.regDim === "analista";
@@ -723,11 +739,12 @@
           barrasPorCampo(cards.etapa.corpo, aguardando, (p) => p.tarefa || "", null, (k) => { estado.tarefa = estado.tarefa === k ? "" : k; sincFiltros(); atualizar(); }, estado, "tarefa", 8);
         }
         if (cards.vistoriasMes) {
-          const comData = linhas.filter((p) => p.dataRegulagem);
-          const mesV = (p) => String(p.dataRegulagem).slice(0, 7);
-          const eixo = [...new Set(comData.map(mesV))].filter(Boolean).sort();
-          const contaV = new Map(); for (const p of comData) { const m = mesV(p); contaV.set(m, (contaV.get(m) || 0) + 1); }
-          G.colunasMes(cards.vistoriasMes.corpo, eixo, contaV, (k) => [mesRotulo(k)]);
+          const historico = (lista, pessoa) => (lista || []).filter((r) => (!estado.dataDe || r.data >= estado.dataDe) && (!estado.dataAte || r.data <= estado.dataAte) && (!pessoa || norm(r.pessoa) === norm(pessoa)));
+          const unicos = (lista, pessoa) => [...new Map(historico(lista, pessoa).map((r) => [r.protocolo + '|' + r.data + '|' + r.pessoa, r])).values()];
+          const v = unicos(dados.vistorias, estado.pessoa), a = unicos(dados.analises, estado.reguladorAnalista);
+          G.matriz(cards.vistoriasMes.corpo, v, (p) => p.data, (p) => p.pessoa || 'Não informado', null, 'Data', 'Regulador');
+          G.matriz(cards.analisesDia.corpo, a, (p) => p.data, (p) => p.pessoa, null, 'Data', 'Regulador analista');
+          G.matriz(cards.analisesMes.corpo, a, (p) => p.data.slice(0, 7), (p) => p.pessoa, null, 'Mês', 'Regulador analista');
         }
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         if (cards.tarefaOrc) {
@@ -778,6 +795,11 @@
   }
 
   function indicadores(linhas, cfg, dados, estado, atualizar) {
+    if (cfg.pessoaCampo === 'analista') {
+      const contagem = new Map();
+      for (const p of linhas.filter((p) => !p._analistasSGA)) { const s = norm(p.statusSga) || 'Não informado'; contagem.set(s, (contagem.get(s) || 0) + 1); }
+      return [...contagem].sort((a, b) => b[1] - a[1]).map(([s, n]) => indicadorFixo(s, nf.format(n), 'processos no SGA', 'info'));
+    }
     if (cfg.modelo === "pendencia") {
       const n = { "PREENCHER": 0, "ATRASADO": 0, "EM DIA": 0, "CONCLUÍDO": 0, "SEM TAREFA": 0 };
       for (const p of linhas) n[pendencia(p, dados)]++;
@@ -862,6 +884,11 @@
   }
   const singular = (cfg) => cfg.rotulo.replace(/e?s$/, "");
   function colsPessoaPend(dados, cfg) {
+    if (cfg.pessoaCampo === 'analista') {
+      const status = [...new Set(dados.processos.filter((p) => !p._analistasSGA).map((p) => norm(p.statusSga)).filter(Boolean))].sort();
+      return [{ rot: 'Analista', valor: () => 0 }, { rot: 'Processos', valor: (g) => g.length },
+        ...status.map((s) => ({ rot: s, valor: (g) => g.filter((p) => norm(p.statusSga) === s).length }))];
+    }
     const c = (k) => (g) => g.filter((p) => pendencia(p, dados) === k).length;
     return [
       { rot: singular(cfg), valor: () => 0 },
@@ -934,10 +961,10 @@
       { rot: "CEP", key: "cep" }, { rot: "Logradouro", key: "logradouro" }, { rot: "Número", key: "numero" },
       { rot: "Complemento", key: "complemento" }, { rot: "Bairro", key: "bairro" }, { rot: "Cidade", key: "cidade" },
       { rot: "UF", key: "uf" }, { rot: "Segmento", key: "segmento" }, { rot: "Site", key: "site" },
-      { rot: "Consultor técnico", key: "consultor" }, { rot: "Situação", key: "situacao" },
+      { rot: "Consultor técnico", key: "consultor" }, { rot: "Processos vinculados", key: "quantidade" }, { rot: "Situação", key: "situacao" },
     ];
     // Nome fantasia pode faltar: a razão social já é usada como nome de exibição.
-    const CAMPOS_FALTANTES = COLS.filter((c) => !["nome", "fantasia", "complemento"].includes(c.key));
+    const CAMPOS_FALTANTES = COLS.filter((c) => !["nome", "fantasia", "complemento", "quantidade"].includes(c.key));
     const falta = (o, chave) => !String(o[chave] || "").trim();
     const POR_PAGINA = 40;
 
@@ -1097,6 +1124,7 @@
     const mount = document.getElementById("conteudo");
     const [sec, chave] = rota.split("/");
     if (sec === "oficinas") { renderOficinas(mount); return; }   // página de oficinas (todos os setores)
+    if (sec === "transcricoes") { GS.renderTranscricoes(mount); return; }
     // bloqueio por papel: setor fora do permitido cai no primeiro dashboard liberado
     if (sec === "dashboard" && GS.SETORES[chave] && !podeVer(chave)) {
       const alvo = dashVisiveis()[0];

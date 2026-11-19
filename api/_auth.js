@@ -45,7 +45,7 @@ function lerUsuarios(env) {
         const v = o[u] || {};
         const senha = v.senha != null ? v.senha : v.password;
         const papel = v.papel != null ? v.papel : v.role;
-        mapa[u] = { senha: String(senha == null ? "" : senha), papel: String(papel || "gerencial") };
+        mapa[u] = { senha: String(senha == null ? "" : senha), papel: String(papel || "") };
       }
     }
   } catch (_) { /* VIEW_USERS ausente ou inválida: segue só com o admin legado */ }
@@ -67,6 +67,7 @@ export function autenticar(cabecalho, env) {
   if (!cred) return null;
   const reg = lerUsuarios(env)[cred.user];
   if (!reg || reg.senha === "" || reg.senha !== cred.pass) return null;
-  const permitidos = PERMISSOES[reg.papel] || TODOS;
+  const permitidos = PERMISSOES[reg.papel];
+  if (!permitidos) return null;
   return { user: cred.user, papel: reg.papel, permitidos };
 }

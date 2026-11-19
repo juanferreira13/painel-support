@@ -1,8 +1,59 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { carregarTudo, indexador, mapProcessoSiga, incorporarStatusSga } from '../api/_core.js';
+import { carregarTudo, indexador, mapProcessoSiga, incorporarStatusSga, salvarVistoria } from '../api/_core.js';
 import { GRUPOS } from '../api/dados.js';
+import { autenticar } from '../api/_auth.js';
+
+test('cabeçalhos duplicados usam o primeiro valor preenchido', () => {
+  const get = indexador(['REGULADOR ANALISTA', 'REGULADOR ANALISTA']);
+  assert.equal(get(['', 'Rafael'], 'REGULADOR ANALISTA'), 'Rafael');
+});
+
+test('orçamentista, Rafael, nome fantasia e produção vêm das colunas nomeadas', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const saJson = { client_email: 'teste@example.invalid', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
+  const abas = {
+    SIGA: [['PROTOCOLO SIGA','PROTOCOLO SGA','SETOR','Cobertura','Nome','Regulador','CNPJ'], ['2026-1','42','REGULADORES','ASSOCIADO','Maria','LUIZ','12345678000199']],
+    REGULADORES: [['PROTOCOLO SIGA','PROTOCOLO','Cobertura','Nome','Data liberação','REGULADOR SGA','REGULADOR ANALISTA','ID EXTERNO','CNPJ'], ['2026-1','42','ASSOCIADO','Maria','18/11/2026','LUIZ','','RAFAEL','12345678000199']],
+    'SGA!A:AF': [['PROTOCOLO','TIPO EVENTO','NOME ASSOCIADO','D A T A D A A N A L I S E D O R E G U L A D O R','ID EXTERNO','NOME FANTASIA OFICINA','CNPJ','ANALISTA RESPONSAVEL'], ['42','ASSOCIADO','Maria','17/11/2026','RAFAEL','Oficina A','12345678000199','Analista SGA']],
+    OFICINAS: [['Nome','Nome fantasia','Telefone','E-mail contato','Cpf/cnpj','Consultor Tecnico'], ['Empresa','Oficina A','','','12345678000199','Ana']],
+    'BASE REGULADOR ANALISTA': [['NUMERO','REGULADOR ANALISTA','DATA DA ANALISE']],
+    'BASE VISTORIA INICIAL': [['NUMERO','REGULADOR ANALISTA','DATA DA ANALISE'], ['2026-1','LUIZ','18/11/2026']],
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('oauth2.googleapis.com') ? { json: async () => ({ access_token: 'teste' }) } :
+    { json: async () => ({ values: abas[decodeURIComponent(String(url).split('/values/')[1].split('?')[0])] || [] }) };
+  try {
+    const r = await carregarTudo({ saJson, sheetSinistro: 'gerencial', sheetReguladores: 'reguladores' });
+    assert.equal(r.processos[0].responsavel, 'LUIZ');
+    assert.equal(r.processos[0].reguladorAnalista, 'RAFAEL');
+    assert.equal(r.processos[0].oficinaSga, 'Oficina A');
+    assert.equal(r.processos[0].analista, 'Analista SGA');
+    assert.equal(r.processos[0].consultorTecnico, 'Ana');
+    assert.equal(r.listas.oficinas[0].quantidade, 1);
+    assert.deepEqual(r.analises.map(({pessoa, data}) => ({pessoa, data})), [{pessoa:'RAFAEL', data:'2026-11-17'}]);
+    assert.deepEqual(r.vistorias.map(({pessoa, data}) => ({pessoa, data})), [{pessoa:'LUIZ', data:'2026-11-18'}]);
+    assert.equal(r.gerado.br, 'Não informado');
+  } finally { globalThis.fetch = original; }
+});
+
+test('papel desconhecido não concede acesso gerencial', () => {
+  const header = 'Basic ' + Buffer.from('usuario:senha').toString('base64');
+  assert.equal(autenticar(header, { VIEW_USERS: JSON.stringify({ usuario: { senha: 'senha', papel: 'desconhecido' } }) }), null);
+});
+
+test('preparação da vistoria separa data e responsável nas colunas corretas', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const saJson = { client_email: 'teste@example.invalid', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('oauth2.googleapis.com') ? { json: async () => ({ access_token: 'teste' }) } :
+    { json: async () => ({ values: [['NUMERO','REGULADOR ANALISTA','DATA DA ANALISE'], ['2026-1','ANTIGO','']] }) };
+  try {
+    const r = await salvarVistoria({saJson, sheetSinistro:'gerencial'}, [{protocolo:'2026-1', dataIso:'2026-11-18', responsavel:'LUIZ'}], {dryRun:true});
+    assert.deepEqual(r.updates, ["'BASE VISTORIA INICIAL'!C2 = 18/11/2026", "'BASE VISTORIA INICIAL'!B2 = LUIZ"]);
+  } finally { globalThis.fetch = original; }
+});
 
 test('encaminhamento por tarefa controla o acesso ao painel de consultores', () => {
   assert.equal(GRUPOS.consultores({ setor: 'REGULADORES', porTarefa: 'CONSULTORES', evento: 'COLISÃO' }), true);

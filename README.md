@@ -1,5 +1,15 @@
 # Painel do Sinistro · Grupo Support
 
+## Atualização de dados e transcrições
+
+O integrador atualizado registra em `_ATUALIZACAO_INTEGRADOR` o horário do relatório SGA aplicado ao gerencial. Antes da primeira execução com a versão nova, o painel mostra “Não informado”.
+
+A área Transcrições usa o login individual já existente do painel. Cada usuário consulta apenas seus registros; os logins listados em `TRANSCRICOES_ADMIN_USERS` consultam todos. `larissa` e `support` foram indicados como administradores; inclua outros somente quando identificados.
+
+O projeto `support-transcricoes` foi criado na organização `juanf4`, com a tabela de `supabase/transcricoes.sql`. Para habilitar, configure na Vercel `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (chave secreta do projeto), `GEMINI_API_KEY`, `GEMINI_MODEL` e `TRANSCRICOES_ADMIN_USERS`. As chaves ficam exclusivamente no servidor; a tabela mantém RLS ligada, e a autorização por usuário é aplicada na API do painel. O áudio é enviado ao Gemini; no Supabase são salvos somente a transcrição e os metadados informados. O envio web nesta versão aceita áudio de até 2,5 MB; o transcritor Windows continua disponível para arquivos maiores e PDF/TXT.
+
+É necessário validar o funcionamento com o Supabase, a chave Gemini e as contas individuais antes de publicar para a equipe.
+
 Site **novo e independente** que reúne, numa **única página**, os dashboards e o
 preenchimento dos três setores do sinistro — **analistas, reguladores e
 consultores** — no mesmo padrão visual dos painéis de conferência e

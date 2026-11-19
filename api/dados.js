@@ -40,8 +40,9 @@ export default async function handler(req, res) {
   // Papel do usuário logado (Basic Auth) -> setores que ele pode ver. O servidor
   // é a fronteira de privacidade: só manda ao navegador os dados permitidos.
   const auth = autenticar(req.headers && req.headers.authorization, process.env);
-  const permitidos = (auth && auth.permitidos) || TODOS;
-  const papel = (auth && auth.papel) || "gerencial";
+  if (!auth) return json(res, 401, { erro: "Autenticação necessária." });
+  const permitidos = auth.permitidos;
+  const papel = auth.papel;
   const vePermitido = (p) => permitidos.some((k) => GRUPOS[k] && GRUPOS[k](p));
 
   try {
@@ -49,9 +50,11 @@ export default async function handler(req, res) {
     if (!cache.dados || agora - cache.t > TTL) {
       cache = { t: agora, dados: await carregarTudo({ saJson, sheetSinistro, sheetReguladores }), erro: null };
     }
-    const { processos, listas, gerado } = cache.dados;
+    const { processos, listas, gerado, analises, vistorias } = cache.dados;
     const saida = processos.filter(vePermitido);
-    return json(res, 200, { chave: permitidos[0], papel, permitidos, processos: saida, gerado, listas, fonte: FONTE });
+    const veReguladores = permitidos.includes('reguladores');
+    return json(res, 200, { chave: permitidos[0], papel, permitidos, processos: saida, gerado, listas, fonte: FONTE,
+      analises: veReguladores ? analises : [], vistorias: veReguladores ? vistorias : [] });
   } catch (e) {
     cache = { t: 0, dados: null, erro: String(e && e.message || e) };
     return json(res, 502, { erro: "Falha ao ler o Google Sheets: " + (e && e.message || e) });
