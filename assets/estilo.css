@@ -414,3 +414,8 @@ footer.rodape b { color: #fff; font-weight: 600; }
   .lateral, .filtros, .paginas, .botao, .link, .salvar, #avisos, .quem-barra, .menu-botao, .topo .dir { display: none !important; }
   .app { grid-template-columns: 1fr; } body { background: #fff; } .cartao { break-inside: avoid; }
 }
+/* Área de transcrições */
+.formulario-transcricao { display: grid; gap: 1rem; margin: 1.25rem 0; }
+.formulario-transcricao .campo { display: grid; gap: .35rem; }
+.formulario-transcricao input, .formulario-transcricao select { width: 100%; min-height: 2.6rem; padding: .55rem; border: 1px solid #b9c5a7; border-radius: .4rem; font: inherit; }
+.formulario-transcricao .botao { justify-self: start; }

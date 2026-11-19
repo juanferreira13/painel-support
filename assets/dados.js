@@ -240,7 +240,8 @@
         if (!r.ok) throw new Error("http " + r.status);
         const j = await r.json();
         if (!j || j.configurado === false || !Array.isArray(j.processos)) throw new Error("sem dados ao vivo");
-        LIVE = { processos: j.processos, listas: Object.assign({}, LISTAS_DEMO, j.listas || {}), gerado: j.gerado || GS.GERADO };
+        LIVE = { processos: j.processos, listas: Object.assign({}, LISTAS_DEMO, j.listas || {}), gerado: j.gerado || GS.GERADO,
+                 analises: j.analises || [], vistorias: j.vistorias || [] };
         GS.PAPEL = j.papel || null;
         GS.PERMITIDOS = Array.isArray(j.permitidos) && j.permitidos.length ? j.permitidos : null;
         GS.FONTE = j.fonte || { tipo: "sheets", rotulo: "Dados ao vivo (Sheets)", live: true };
@@ -265,24 +266,28 @@
       const overlay = lerOverlay();
       const fonte = live ? live.processos : BASE;
       const processos = fonte.filter(filtro).map((p) => aplicarOverlay(Object.assign({}, p), overlay));
-      return { chave, processos, gerado: GS.GERADO, fonte: GS.FONTE, listas: GS.DB.listas };
+      return { chave, processos, gerado: GS.GERADO, fonte: GS.FONTE, listas: GS.DB.listas,
+               analises: live ? live.analises : [], vistorias: live ? live.vistorias : [] };
     },
     // Grava o preenchimento. Ao vivo: POST /api/salvar (grava a Data da Vistoria
     // Inicial no Sheets). Demo: só o overlay local. Sempre reflete no overlay.
     async salvarValores(registros) {
-      const o = lerOverlay();
-      for (const r of registros) { (o[r.protocolo] = o[r.protocolo] || {})[r.campo] = r.valor; }
-      try { localStorage.setItem(CHAVE_VALORES, JSON.stringify(o)); } catch (_) { /* sem persistência */ }
       if (LIVE) {
         try {
           const resp = await fetch("/api/salvar", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ registros }) });
           const j = await resp.json().catch(() => ({}));
           if (!resp.ok) return { ok: false, total: registros.length, erro: (j && j.erro) || ("http " + resp.status) };
+          const o = lerOverlay();
+          for (const r of registros) { (o[r.protocolo] = o[r.protocolo] || {})[r.campo] = r.valor; }
+          try { localStorage.setItem(CHAVE_VALORES, JSON.stringify(o)); } catch (_) {}
           return { ok: true, total: registros.length, sheets: j };
         } catch (e) {
           return { ok: false, total: registros.length, erro: String((e && e.message) || e) };
         }
       }
+      const o = lerOverlay();
+      for (const r of registros) { (o[r.protocolo] = o[r.protocolo] || {})[r.campo] = r.valor; }
+      try { localStorage.setItem(CHAVE_VALORES, JSON.stringify(o)); } catch (_) {}
       return { ok: true, total: registros.length };
     },
     // Resumo para o hero. Chame depois de garantir() (o início aguarda a fonte).

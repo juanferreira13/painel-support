@@ -45,6 +45,7 @@ async function lerAba(token, sheetId, aba) {
 /* ----------------------------------------------------------- helpers de valor */
 const trim = (v) => (v == null ? "" : String(v).trim());
 const norm = (v) => trim(v).toUpperCase().replace(/\s+/g, " ");
+const nomeValido = (v) => { const s = trim(v); return /[A-Za-zÀ-ÿ]/.test(s) && !/\d/.test(s) && !/^(N[ÃA]O INFORMADO|N\/A|#REF!)$/i.test(s) ? s : ''; };
 
 // "dd/mm/aaaa" (ou "dd/mm/aa", ou já ISO) -> "aaaa-mm-dd"; vazio -> ""
 function paraIso(v) {
@@ -101,9 +102,9 @@ const hojeIso = () => new Date().toISOString().slice(0, 10);
 /* índice de cabeçalho: nome normalizado -> coluna. getter por lista de nomes (primeiro que casar). */
 export function indexador(cabecalho) {
   const idx = new Map();
-  cabecalho.forEach((h, i) => { const k = norm(h); if (k && !idx.has(k)) idx.set(k, i); });
+  cabecalho.forEach((h, i) => { const k = norm(h); if (k) { if (!idx.has(k)) idx.set(k, []); idx.get(k).push(i); } });
   return (linha, ...nomes) => {
-    for (const n of nomes) { const i = idx.get(norm(n)); if (i != null) { const v = linha[i]; if (v != null && String(v) !== "") return v; } }
+    for (const n of nomes) for (const i of idx.get(norm(n)) || []) { const v = linha[i]; if (v != null && String(v).trim() !== "") return v; }
     return "";
   };
 }
@@ -167,6 +168,7 @@ export function mapProcessoSiga(get) {
     placaSga: trim(get("PLACA SGA")),
     mesRefSiga: trim(get("MÊS REF SIGA", "MES REF SIGA")),
     oficinaSga: trim(get("OFICINA SGA", "OFICINAS")),
+    cnpj: trim(get("CNPJ", "CPF/CNPJ")),
     regulador: trim(get("Regulador", "REGULADOR SGA")),
     voluntario: trim(get("VOLUNTARIO", "VOLUNTÁRIO")),
     dataEvento: paraIso(get("DATA EVENTO")),
@@ -230,7 +232,7 @@ export function incorporarStatusSga(processos, tabela) {
       dataComunicado, competencia: dataComunicado ? dataComunicado.slice(0, 7) : "",
       dataAutorizado: paraIso(g("DATA DA AUTORIZACAO", "DATA DA AUTORIZAÇÃO")),
       dataEvento: paraIso(g("DATA EVENTO")), marca: norm(g("MARCA VEICULO")), modelo: norm(g("MODELO VEICULO")),
-      veiculo: trim(g("MODELO VEICULO")), oficinaSga: trim(g("NOME FORNECEDOR", "NOME FANTASIA")),
+      veiculo: trim(g("MODELO VEICULO")), oficinaSga: trim(g("NOME FANTASIA OFICINA", "NOME FANTASIA FORNECEDOR", "NOME FORNECEDOR", "NOME FANTASIA")),
       campoAdicional: trim(g("CAMPO ADICIONAL EVENTO")), consultor: trim(g("VOLUNTARIO", "VOLUNTÁRIO")),
       consultorTecnico: trim(g("CONTATO")), classif: trim(g("MOTIVO NEGADO", "CLASSIFICACAO")),
       diasAberto: null, _somenteSGA: true, _analistasSGA: true,
@@ -245,7 +247,7 @@ function mapProcessoRegulador(get) {
   const p = mapProcessoSiga(get);
   p.setor = "REGULADORES";
   p.responsavel = trim(get("REGULADOR SGA", "Responsável", "Regulador")) || p.responsavel;   // orçamentista
-  p.reguladorAnalista = trim(get("REGULADOR ANALISTA"));
+  p.reguladorAnalista = nomeValido(get("REGULADOR ANALISTA")) || nomeValido(get("ID EXTERNO"));
   p.statusRegulacao = sinais(p.statusSiga, p.statusSga).statusRegulacao;                      // derivado (Fase 1)
   return p;
 }
@@ -256,58 +258,62 @@ export async function carregarTudo(cfg) {
   const token = await obterToken(saJson);
 
   // Lê as abas necessárias EM PARALELO (corta a latência e evita timeout da função na Vercel).
-  const [siga, baseAna, baseVis, reg, ofiAba, sga] = await Promise.all([
+  const [siga, baseAna, baseVis, reg, ofiAba, sga, atualizacao] = await Promise.all([
     lerAba(token, sheetSinistro, "SIGA"),
     lerAba(token, sheetSinistro, "BASE REGULADOR ANALISTA").catch(() => []),
     lerAba(token, sheetSinistro, "BASE VISTORIA INICIAL").catch(() => []),
     sheetReguladores ? lerAba(token, sheetReguladores, "REGULADORES").catch(() => []) : Promise.resolve([]),
     lerAba(token, sheetSinistro, "OFICINAS").catch(() => []),
     lerAba(token, sheetSinistro, "SGA!A:AF"),
+    lerAba(token, sheetSinistro, "_ATUALIZACAO_INTEGRADOR!A1:B2").catch(() => []),
   ]);
 
   // Gerencial / analistas / consultores: aba SIGA (todos os sinistros)
   const getSiga = indexador(siga[0] || []);
   // orçamentista do regulador = coluna AM do SIGA (índice 38). Guardado por protocolo
   // para preencher os processos dos reguladores (col AM do SIGA ou col T do SGA).
-  const AM_SIGA = 38;
   const orcSigaAM = new Map();
   const gerais = [];
   for (const linha of siga.slice(1)) {
     const p = mapProcessoSiga((...nomes) => getSiga(linha, ...nomes));
     if (!p.protocoloSiga) continue;
     gerais.push(p);
-    const am = trim(linha[AM_SIGA] == null ? "" : linha[AM_SIGA]);
+    const am = trim(getSiga(linha, "Regulador", "REGULADOR SGA"));
     if (am) orcSigaAM.set(norm(p.protocoloSiga), am);
   }
 
   // BASE REGULADOR ANALISTA (NUMERO -> REGULADOR ANALISTA): casa o analista por protocolo
-  const baseAnalista = new Map();
+  const baseAnalista = new Map(), analises = [];
   { const getB = indexador(baseAna[0] || []);
     for (const linha of baseAna.slice(1)) {
       const num = norm(getB(linha, "NUMERO", "ID EXTERNO", "PROTOCOLO"));
       const an = trim(getB(linha, "REGULADOR ANALISTA"));
+      const data = paraIso(getB(linha, "DATA DA ANALISE", "DATA DA ANÁLISE"));
       if (num && an) baseAnalista.set(num, an);
+      if (num && an && data) analises.push({ protocolo: num, pessoa: an, data });
     } }
   const analistaDe = (p) => baseAnalista.get(norm(p.protocoloSiga)) || "";
 
   // BASE VISTORIA INICIAL (NUMERO = PROTOCOLO SIGA -> DATA DA ANALISE): data da vistoria inicial
-  const baseVistoria = new Map();
+  const baseVistoria = new Map(), baseVistoriaPessoa = new Map(), vistorias = [];
   { const getV = indexador(baseVis[0] || []);
     for (const linha of baseVis.slice(1)) {
       const num = norm(getV(linha, "NUMERO", "PROTOCOLO SIGA", "PROTOCOLO"));
       const dt = paraIso(getV(linha, "DATA DA ANALISE", "DATA DA REGULAGEM", "DATA"));
       if (num && dt) baseVistoria.set(num, dt);
+      const pessoa = trim(getV(linha, "REGULADOR ANALISTA", "REGULADOR", "RESPONSAVEL"));
+      if (num && pessoa) baseVistoriaPessoa.set(num, pessoa);
+      if (num && dt) vistorias.push({ protocolo: num, pessoa, data: dt });
     } }
   const vistoriaDe = (p) => baseVistoria.get(norm(p.protocoloSiga)) || "";
 
   // Reguladores: aba REGULADORES (tem REGULADOR ANALISTA e REGULADOR SGA)
   const getReg = indexador(reg[0] || []);
   // orçamentista do regulador = coluna T do SGA (índice 19), guardado por protocolo
-  const T_SGA = 19;
   const orcSgaColT = new Map();
   const reguladores = reg.slice(1).map((linha) => {
     const p = mapProcessoRegulador((...nomes) => getReg(linha, ...nomes));
-    const t = trim(linha[T_SGA] == null ? "" : linha[T_SGA]);
+    const t = trim(getReg(linha, "REGULADOR SGA", "Regulador"));
     if (p.protocoloSiga && t) orcSgaColT.set(norm(p.protocoloSiga), t);
     return p;
   }).filter((p) => p.protocoloSiga);
@@ -341,6 +347,7 @@ export async function carregarTudo(cfg) {
         p.porTarefa = base.porTarefa;
         p.consultor = base.consultor;
         p.consultorTecnico = base.consultorTecnico;
+        if (!p.cnpj) p.cnpj = base.cnpj;
         p.campoAdicional = base.campoAdicional;
         if (!trim(p.tarefa)) p.tarefa = base.tarefa;                            // tarefa (etapa) vem da aba SIGA
         if (!p.diasAtraso) p.diasAtraso = base.diasAtraso;                      // dias em atraso (coluna O)
@@ -350,7 +357,27 @@ export async function carregarTudo(cfg) {
         if (!trim(p.diasUteisAutorizado)) p.diasUteisAutorizado = base.diasUteisAutorizado;
       }
       if (!p.dataRegulagem) p.dataRegulagem = vistoriaDe(p);
+      p.responsavelVistoria = baseVistoriaPessoa.get(norm(p.protocoloSiga)) || '';
     }
+  }
+  // Reúne dados de cada item SGA pela chave composta, sem misturar associado e terceiro.
+  const getSga = indexador(sga[0] || []), itensSga = new Map(), analisesSga = [];
+  const colDataAnalise = (sga[0] || []).findIndex((v) => norm(v).replace(/[^A-Z0-9]/g, '') === 'DATADAANALISEDOREGULADOR');
+  for (const linha of sga.slice(1)) {
+    const g = (...n) => getSga(linha, ...n);
+    const k = chaveProcesso(g('PROTOCOLO'), g('TIPO EVENTO'), g('NOME TERCEIRO') || g('NOME ASSOCIADO'));
+    if (k) { const a = itensSga.get(k) || []; a.push(linha); itensSga.set(k, a); }
+    const pessoa = nomeValido(g('ID EXTERNO'));
+    const data = colDataAnalise >= 0 ? paraIso(linha[colDataAnalise]) : '';
+    if (k && pessoa && data) analisesSga.push({ protocolo: k, pessoa, data });
+  }
+  for (const p of processos) {
+    const itens = itensSga.get(chaveProcesso(p.protocoloSga, p.cobertura, p.nome)) || [];
+    if (itens.length !== 1) continue;
+    const g = (...n) => getSga(itens[0], ...n);
+    p.analista = trim(g('ANALISTA RESPONSAVEL', 'ANALISTA RESPONSÁVEL')) || p.analista;
+    p.oficinaSga = trim(g('NOME FANTASIA OFICINA', 'NOME FANTASIA FORNECEDOR', 'NOME FORNECEDOR', 'NOME FANTASIA')) || p.oficinaSga;
+    p.cnpj = trim(g('CNPJ', 'CPF/CNPJ')) || p.cnpj;
   }
   incorporarStatusSga(processos, sga);
   const distintos = (arr, campo, filtro) => [...new Set(arr.filter(filtro || (() => true)).map((p) => limpo(p[campo])).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -381,12 +408,24 @@ export async function carregarTudo(cfg) {
       segmento: limpo(g("Segmento")),
       site: limpo(g("Site", "Website")),
       situacao: limpo(g("Situação", "Situacao", "Status")).toUpperCase(),
-      consultor: limpo(g("Contato", "Consultor", "Consultor Técnico", "Consultor Tecnico")),
+      consultor: limpo(g("Consultor Técnico", "Consultor Tecnico", "Consultor", "Contato")),
     };
   }).filter((o) => o.nome || o.fantasia || o.cnpj);
 
+  const doc = (v) => trim(v).replace(/\D/g, "");
+  const oficinasPorDoc = new Map();
+  for (const o of oficinas) { const k = doc(o.cnpj); if (k) { const a = oficinasPorDoc.get(k) || []; a.push(o); oficinasPorDoc.set(k, a); } }
+  const contados = new Set();
+  for (const p of processos) {
+    const candidatas = oficinasPorDoc.get(doc(p.cnpj)) || [];
+    if (candidatas.length === 1) {
+      p.consultorTecnico = candidatas[0].consultor;
+      const chave = doc(p.cnpj) + '|' + (p.protocoloSiga || p.protocoloSga);
+      if (!contados.has(chave)) { contados.add(chave); candidatas[0].quantidade = (candidatas[0].quantidade || 0) + 1; }
+    } else if (doc(p.cnpj)) p.consultorTecnico = "";
+  }
   const listas = {
-    analistas: distintos(processos, "analista", ehAnalista).length ? distintos(processos, "analista", ehAnalista) : distintos(processos, "responsavel", ehAnalista),
+    analistas: distintos(processos, "analista", (p) => ehAnalista(p) && !p._analistasSGA),
     reguladores: distintos(processos, "responsavel", (p) => p.setor === "REGULADORES"),
     reguladoresAnalistas: distintos(processos, "reguladorAnalista", (p) => p.setor === "REGULADORES"),
     consultores: distintos(processos, "consultorTecnico", (p) => (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")) && p.evento !== "VIDROS"),
@@ -398,8 +437,12 @@ export async function carregarTudo(cfg) {
     oficinas,
     setores: setoresReais.length ? setoresReais : ["ANALISTAS", "VIDROS", "REGULADORES", "CONSULTORES"],
   };
-  const gerado = { iso: new Date().toISOString().slice(0, 16), br: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) };
-  return { processos, listas, gerado };
+  const registrado = trim(atualizacao[1]?.[1]);
+  const dataRegistro = registrado ? new Date(registrado) : null;
+  const gerado = dataRegistro && !Number.isNaN(dataRegistro.valueOf())
+    ? { iso: dataRegistro.toISOString(), br: dataRegistro.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) }
+    : { iso: '', br: 'Não informado' };
+  return { processos, listas, gerado, analises: analisesSga.length ? analisesSga : analises, vistorias };
 }
 
 /* ----------------------------------------------------------- gravação (Fase 2): Data da Vistoria Inicial */
@@ -413,9 +456,10 @@ export async function salvarVistoria(cfg, writes, opts = {}) {
   const token = await obterToken(saJson, opts.dryRun ? undefined : "https://www.googleapis.com/auth/spreadsheets");
   const tabela = await lerAba(token, sheetSinistro, ABA);
   const header = tabela[0] && tabela[0].length ? tabela[0] : ["NUMERO", "REGULADOR ANALISTA", "DATA DA ANALISE"];
-  const colNum = Math.max(0, acharCol(header, ["NUMERO", "PROTOCOLO SIGA", "PROTOCOLO"]));
-  let colData = acharCol(header, ["DATA DA ANALISE", "DATA DA REGULAGEM", "DATA"]);
-  if (colData < 0) colData = header.length - 1;
+  const colNum = acharCol(header, ["NUMERO", "PROTOCOLO SIGA", "PROTOCOLO"]);
+  const colData = acharCol(header, ["DATA DA ANALISE", "DATA DA REGULAGEM", "DATA"]);
+  const colResponsavel = acharCol(header, ["REGULADOR ANALISTA", "REGULADOR", "RESPONSAVEL"]);
+  if (colNum < 0 || colData < 0 || colResponsavel < 0) throw new Error('A base de vistoria não tem as colunas de número, data e responsável esperadas.');
   const linhaDe = new Map();
   for (let i = 1; i < tabela.length; i++) { const n = norm((tabela[i] || [])[colNum]); if (n && !linhaDe.has(n)) linhaDe.set(n, i + 1); }
   const q = (aba) => "'" + aba.replace(/'/g, "''") + "'";
@@ -424,10 +468,17 @@ export async function salvarVistoria(cfg, writes, opts = {}) {
   const updates = [], novos = [];
   for (const w of writes) {
     const prot = trim(w.protocolo); if (!prot) continue;
-    const br = isoParaBr(w.dataIso);
+    const br = w.dataIso == null ? null : isoParaBr(w.dataIso);
     const row = linhaDe.get(norm(prot));
-    if (row) updates.push({ range: `${q(ABA)}!${dataColLetra}${row}`, values: [[br]] });
-    else { const nova = new Array(header.length).fill(""); nova[colNum] = prot; nova[colData] = br; novos.push(nova); }
+    if (row) {
+      if (br != null) updates.push({ range: `${q(ABA)}!${dataColLetra}${row}`, values: [[br]] });
+      if (w.responsavel != null) updates.push({ range: `${q(ABA)}!${colLetra(colResponsavel)}${row}`, values: [[trim(w.responsavel)]] });
+    } else {
+      const nova = new Array(header.length).fill(""); nova[colNum] = prot;
+      if (br != null) nova[colData] = br;
+      if (w.responsavel != null) nova[colResponsavel] = trim(w.responsavel);
+      novos.push(nova);
+    }
   }
   if (opts.dryRun) {
     return { ok: true, dryRun: true, colNum, colData, dataColLetra, totalLinhas: tabela.length - 1,

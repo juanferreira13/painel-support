@@ -139,6 +139,7 @@
       // o único com destino real na planilha (aba BASE VISTORIA INICIAL, via /api/salvar).
       campos: [
         { id: "dataRegulagem", rot: "Data da vistoria inicial", tipo: "date" },
+        { id: "responsavelVistoria", rot: "Regulador responsável pela vistoria", tipo: "text" },
       ],
       colunas: [
         { rot: "Protocolo SIGA", key: "protocoloSiga", classe: "fixo" },
@@ -151,6 +152,7 @@
         { rot: "Cidade", key: "cidade", classe: "fixo" },
         { rot: "Oficina", key: "oficina" },
         { rot: "Vistoria inicial", key: "dataRegulagem", classe: "fixo", tipo: "data", editavel: true },
+        { rot: "Responsável pela vistoria", key: "responsavelVistoria" },
         { rot: "DATA AUTORIZADO", key: "dataAutorizado", classe: "fixo", tipo: "data" },
         { rot: "Dias atraso SIGA", key: "diasAtrasoSiga", classe: "num" },
         { rot: "Dias úteis autoriz.", key: "diasUteisAutorizado", classe: "num" },
