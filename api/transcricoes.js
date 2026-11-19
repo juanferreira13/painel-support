@@ -41,15 +41,23 @@ export default async function handler(req, res) {
     const audio = String(dados.audio || ''), mime = String(dados.mime || '').toLowerCase();
     if (!TIPOS.has(mime) || !/^[A-Za-z0-9+/]+={0,2}$/.test(audio) || audio.length > 3_500_000)
       return json(res, 400, { erro: 'Use um áudio compatível de até 2,5 MB.' });
-    const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const modelo = process.env.GEMINI_MODEL || 'gemini-flash-latest';
     if (!/^[a-zA-Z0-9._-]+$/.test(modelo)) throw new Error('Modelo inválido');
     const gem = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': gemini },
       body: JSON.stringify({ contents: [{ parts: [{ text: 'Transcreva fielmente o áudio em português. Não invente palavras; sinalize trechos inaudíveis. Responda somente com a transcrição.' }, { inline_data: { mime_type: mime, data: audio } }] }] })
     });
+    if (!gem.ok) {
+      console.error('Gemini recusou a transcrição; HTTP', gem.status);
+      if (gem.status === 400 || gem.status === 413) return json(res, 502, { erro: 'O Gemini não aceitou este áudio. Confira o formato e tente outro arquivo.' });
+      if (gem.status === 401 || gem.status === 403) return json(res, 502, { erro: 'O Gemini recusou a chave de acesso. Verifique a configuração da API.' });
+      if (gem.status === 404) return json(res, 502, { erro: 'O modelo Gemini configurado não está disponível para esta chave.' });
+      if (gem.status === 429) return json(res, 502, { erro: 'O Gemini atingiu o limite de uso. Aguarde e confira a cota da API.' });
+      return json(res, 502, { erro: 'O Gemini está indisponível no momento. Tente novamente mais tarde.' });
+    }
     const resposta = await gem.json();
     const texto = resposta.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('').trim();
-    if (!gem.ok || !texto) throw new Error('Não foi possível transcrever o áudio.');
+    if (!texto) return json(res, 502, { erro: 'O Gemini não retornou uma transcrição para este áudio.' });
     const metadados = {};
     for (const k of ['envolvido', 'nome', 'placa', 'octa', 'telefone']) metadados[k] = String(dados.metadados?.[k] || '').slice(0, 200);
     if (metadados.envolvido && !['Associado', 'Condutor', 'Terceiro'].includes(metadados.envolvido)) return json(res, 400, { erro: 'Tipo de envolvido inválido.' });

@@ -24,7 +24,10 @@ test('a transcrição é salva com o usuário autenticado e sem armazenar áudio
   Object.assign(process.env, { VIEW_USERS: JSON.stringify({ ana: { senha:'senha', papel:'analistas' } }), SUPABASE_URL:'https://exemplo.supabase.co', SUPABASE_SERVICE_ROLE_KEY:'falsa', GEMINI_API_KEY:'falsa' });
   let salvo;
   globalThis.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) return { ok: true, json: async () => ({ candidates:[{content:{parts:[{text:'Transcrição de teste'}]}}] }) };
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      assert.match(String(url), /gemini-flash-latest:generateContent/);
+      return { ok: true, json: async () => ({ candidates:[{content:{parts:[{text:'Transcrição de teste'}]}}] }) };
+    }
     salvo = JSON.parse(opts.body); return { ok: true, json: async () => [{ id: 1, ...salvo }] };
   };
   try {
@@ -33,4 +36,17 @@ test('a transcrição é salva com o usuário autenticado e sem armazenar áudio
     assert.equal(res.statusCode, 201); assert.equal(salvo.usuario, 'ana'); assert.equal(salvo.texto, 'Transcrição de teste');
     assert.equal(Object.hasOwn(salvo, 'audio'), false);
   } finally { process.env = env; globalThis.fetch = fetchOriginal; }
+});
+
+test('informa limite de uso sem expor a resposta ou gravar dados', async () => {
+  const env = { ...process.env }, fetchOriginal = globalThis.fetch, errorOriginal = console.error;
+  Object.assign(process.env, { VIEW_USERS: JSON.stringify({ ana: { senha:'senha', papel:'analistas' } }), SUPABASE_URL:'https://exemplo.supabase.co', SUPABASE_SECRET_KEY:'sb_secret_falsa', GEMINI_API_KEY:'falsa' });
+  let chamadas = 0;
+  globalThis.fetch = async () => { chamadas++; return { ok:false, status:429, json: async () => ({ error:{ message:'detalhe privado' } }) }; };
+  console.error = () => {};
+  try {
+    const res = responder();
+    await handler({ method:'POST', headers:{authorization:basic('ana'), 'content-type':'application/json'}, body:{ nome:'teste.ogg', mime:'audio/ogg', audio:'dGVzdGU=' } }, res);
+    assert.equal(res.statusCode, 502); assert.match(res.body.erro, /limite de uso/); assert.doesNotMatch(res.body.erro, /detalhe privado/); assert.equal(chamadas, 1);
+  } finally { process.env = env; globalThis.fetch = fetchOriginal; console.error = errorOriginal; }
 });
