@@ -47,6 +47,27 @@ test('informa limite de uso sem expor a resposta ou gravar dados', async () => {
   try {
     const res = responder();
     await handler({ method:'POST', headers:{authorization:basic('ana'), 'content-type':'application/json'}, body:{ nome:'teste.ogg', mime:'audio/ogg', audio:'dGVzdGU=' } }, res);
-    assert.equal(res.statusCode, 502); assert.match(res.body.erro, /limite de uso/); assert.doesNotMatch(res.body.erro, /detalhe privado/); assert.equal(chamadas, 1);
+    assert.equal(res.statusCode, 502); assert.match(res.body.erro, /limite de uso/); assert.doesNotMatch(res.body.erro, /detalhe privado/); assert.equal(chamadas, 3);
+  } finally { process.env = env; globalThis.fetch = fetchOriginal; console.error = errorOriginal; }
+});
+
+test('tenta outro modelo quando Gemini responde indisponível e salva uma única vez', async () => {
+  const env = { ...process.env }, fetchOriginal = globalThis.fetch, errorOriginal = console.error;
+  Object.assign(process.env, { VIEW_USERS: JSON.stringify({ ana: { senha:'senha', papel:'analistas' } }), SUPABASE_URL:'https://exemplo.supabase.co', SUPABASE_SECRET_KEY:'sb_secret_falsa', GEMINI_API_KEY:'falsa' });
+  let tentativas = 0, gravacoes = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      tentativas++;
+      if (tentativas === 1) return { ok:false, status:503 };
+      assert.match(String(url), /gemini-3\.5-flash:generateContent/);
+      return { ok:true, json:async () => ({ candidates:[{content:{parts:[{text:'Áudio transcrito'}]}}] }) };
+    }
+    gravacoes++; return { ok:true, json:async () => [{id:1}] };
+  };
+  console.error = () => {};
+  try {
+    const res = responder();
+    await handler({ method:'POST', headers:{authorization:basic('ana'), 'content-type':'application/json'}, body:{ nome:'teste.ogg', mime:'audio/ogg', audio:'dGVzdGU=' } }, res);
+    assert.equal(res.statusCode, 201); assert.equal(tentativas, 2); assert.equal(gravacoes, 1);
   } finally { process.env = env; globalThis.fetch = fetchOriginal; console.error = errorOriginal; }
 });
