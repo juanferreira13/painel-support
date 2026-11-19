@@ -41,12 +41,25 @@ export default async function handler(req, res) {
     const audio = String(dados.audio || ''), mime = String(dados.mime || '').toLowerCase();
     if (!TIPOS.has(mime) || !/^[A-Za-z0-9+/]+={0,2}$/.test(audio) || audio.length > 3_500_000)
       return json(res, 400, { erro: 'Use um áudio compatível de até 2,5 MB.' });
-    const modelo = process.env.GEMINI_MODEL || 'gemini-flash-latest';
-    if (!/^[a-zA-Z0-9._-]+$/.test(modelo)) throw new Error('Modelo inválido');
-    const gem = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': gemini },
-      body: JSON.stringify({ contents: [{ parts: [{ text: 'Transcreva fielmente o áudio em português. Não invente palavras; sinalize trechos inaudíveis. Responda somente com a transcrição.' }, { inline_data: { mime_type: mime, data: audio } }] }] })
-    });
+    const modelos = [...new Set([process.env.GEMINI_MODEL || 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-flash-lite-latest'])];
+    if (!modelos.every((modelo) => /^[a-zA-Z0-9._-]+$/.test(modelo))) throw new Error('Modelo inválido');
+    const pedido = JSON.stringify({ contents: [{ parts: [{ text: 'Transcreva fielmente o áudio em português. Não invente palavras; sinalize trechos inaudíveis. Responda somente com a transcrição.' }, { inline_data: { mime_type: mime, data: audio } }] }] });
+    let gem;
+    for (const modelo of modelos) {
+      try {
+        gem = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': gemini },
+          body: pedido, signal: AbortSignal.timeout(16000)
+        });
+      } catch {
+        console.error('Gemini indisponível ou tempo esgotado; modelo', modelo);
+        gem = null;
+        continue;
+      }
+      if (gem.ok || !([404, 429].includes(gem.status) || gem.status >= 500)) break;
+      console.error('Gemini recusou a transcrição; modelo', modelo, 'HTTP', gem.status);
+    }
+    if (!gem) return json(res, 502, { erro: 'O Gemini não respondeu a tempo. Tente novamente em alguns instantes.' });
     if (!gem.ok) {
       console.error('Gemini recusou a transcrição; HTTP', gem.status);
       if (gem.status === 400 || gem.status === 413) return json(res, 502, { erro: 'O Gemini não aceitou este áudio. Confira o formato e tente outro arquivo.' });
