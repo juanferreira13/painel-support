@@ -584,7 +584,7 @@
     // próprio (pelo SETOR atual no SIGA). Os que já migraram pra outro setor saem das contas,
     // gráficos e do dropdown — continuam na planilha, mas fora do BI. Mantém vazio/TODOS (conservador).
     if (cfg.soSetorProprio) {
-      const aindaNoSetor = (p) => { const s = norm(p.setorAtual || ""); return !s || s.includes("REGULAD") || s === "TODOS"; };
+      const aindaNoSetor = (p) => { const s = norm(p.setorAtual || ""); return p._vistoriaAnalistas || !s || s.includes("REGULAD") || s === "TODOS"; };
       dados = Object.assign({}, dados, { processos: dados.processos.filter(aindaNoSetor) });
     }
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
@@ -676,7 +676,8 @@
     const tituloWrap = el("div"); tituloWrap.append(el("h2", null, "Processos"), el("p", { class: "sub lista-sub" }));
     cabeca.append(tituloWrap, exportar);
     listaCard.c.append(cabeca, listaCard.corpo);
-    grade.append(listaCard.c);
+    if (cfg.modelo === "regulacao") grade.prepend(listaCard.c);
+    else grade.append(listaCard.c);
 
     function atualizar() {
       const linhas = aplicarFiltros(dados.processos, cfg, dados, estado);
