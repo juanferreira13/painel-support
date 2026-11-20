@@ -49,6 +49,23 @@ export function vistoriaDosAnalistas(p) {
   const tarefa = norm(p.tarefa).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return norm(p.setor) === 'ANALISTAS' && ['COMUNICAR AUTORIZACAO', 'ANALISAR NECESSIDADE DE CARRO RESERVA'].includes(tarefa);
 }
+
+// A aba REGULADORES guarda histórico; uma linha igual pode continuar nela após
+// o processo passar para os consultores. Só marca duplicata quando todas as
+// partes identificam o mesmo envolvido e a mesma tarefa nas duas fontes.
+export function marcarDuplicadosConsultores(processos) {
+  const chave = (p) => {
+    const partes = [p.protocoloSiga, p.protocoloSga, p.tarefa, p.cobertura, p.nome].map(norm);
+    return partes.every(Boolean) ? JSON.stringify(partes) : '';
+  };
+  const atuais = new Set(processos.filter((p) => p.setor !== 'REGULADORES' &&
+    p.evento !== 'VIDROS' && (p.porTarefa === 'CONSULTORES' || (!p.porTarefa && p.setor === 'CONSULTORES')))
+    .map(chave).filter(Boolean));
+  for (const p of processos) {
+    const k = chave(p);
+    p._duplicadoConsultores = p.setor === 'REGULADORES' && !!k && atuais.has(k);
+  }
+}
 const nomeValido = (v) => { const s = trim(v); return /[A-Za-zÀ-ÿ]/.test(s) && !/\d/.test(s) && !/^(N[ÃA]O INFORMADO|N\/A|#REF!)$/i.test(s) ? s : ''; };
 
 // "dd/mm/aaaa" (ou "dd/mm/aa", ou já ISO) -> "aaaa-mm-dd"; vazio -> ""
@@ -434,11 +451,12 @@ export async function carregarTudo(cfg) {
       if (!contados.has(chave)) { contados.add(chave); candidatas[0].quantidade = (candidatas[0].quantidade || 0) + 1; }
     } else if (doc(p.cnpj)) p.consultorTecnico = "";
   }
+  marcarDuplicadosConsultores(processos);
   const listas = {
     analistas: distintos(processos, "analista", (p) => ehAnalista(p) && !p._analistasSGA),
     reguladores: distintos(processos, "responsavel", (p) => p.setor === "REGULADORES"),
     reguladoresAnalistas: distintos(processos, "reguladorAnalista", (p) => p.setor === "REGULADORES"),
-    consultores: distintos(processos, "consultorTecnico", (p) => (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")) && p.evento !== "VIDROS"),
+    consultores: distintos(processos, "consultorTecnico", (p) => !p._duplicadoConsultores && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")) && p.evento !== "VIDROS"),
     marcas: distintos(processos, "marca"),
     eventos: distintos(processos, "evento"),
     cooperativas: distintos(processos, "cooperativa"),

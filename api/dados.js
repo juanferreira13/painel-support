@@ -17,7 +17,7 @@ export const GRUPOS = {
   sinistro: () => true,
   analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS" || !!p._analistasSGA,
   reguladores: (p) => p.setor === "REGULADORES" || p._vistoriaAnalistas === true,
-  consultores: (p) => p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
+  consultores: (p) => !p._duplicadoConsultores && p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
 };
 
 const TTL = 60_000;             // 60s de cache por instância quente
