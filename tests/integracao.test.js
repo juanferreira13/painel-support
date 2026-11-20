@@ -1,9 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { carregarTudo, indexador, mapProcessoSiga, incorporarStatusSga, salvarVistoria, vistoriaDosAnalistas } from '../api/_core.js';
+import { carregarTudo, indexador, mapProcessoSiga, incorporarStatusSga, salvarVistoria, vistoriaDosAnalistas, marcarDuplicadosConsultores } from '../api/_core.js';
 import { GRUPOS } from '../api/dados.js';
 import { autenticar } from '../api/_auth.js';
+
+test('consultores usa registro atual e preserva tarefas e envolvidos diferentes', () => {
+  const atual = { protocoloSiga:'2025-001', protocoloSga:'123', tarefa:'Execução do Reparo', cobertura:'Associado', nome:'Alice', setor:'CONSULTORES', porTarefa:'CONSULTORES', evento:'COLISÃO', participacao:3000 };
+  const historico = { ...atual, setor:'REGULADORES', participacao:0 };
+  const outroEnvolvido = { ...historico, cobertura:'Terceiro', nome:'Bruno' };
+  const outraTarefa = { ...historico, tarefa:'Vistoria Inicial' };
+  const semChaveCompleta = { ...historico, nome:'' };
+  const lista = [atual, historico, outroEnvolvido, outraTarefa, semChaveCompleta];
+  marcarDuplicadosConsultores(lista);
+  assert.equal(historico._duplicadoConsultores, true);
+  assert.equal(GRUPOS.consultores(atual), true);
+  assert.equal(GRUPOS.consultores(historico), false);
+  for (const p of [outroEnvolvido, outraTarefa, semChaveCompleta]) assert.equal(GRUPOS.consultores(p), true);
+  assert.equal(atual.participacao, 3000);
+  assert.equal(GRUPOS.reguladores(historico), true);
+});
+
+test('carga de dados evita repetir no painel um processo do SIGA e do histórico dos reguladores', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength:2048 });
+  const saJson = { client_email:'teste@example.invalid', private_key:privateKey.export({type:'pkcs8',format:'pem'}) };
+  const cab = ['PROTOCOLO SIGA','PROTOCOLO SGA','SETOR','Tarefa','Cobertura','Nome','POR TAREFA'];
+  const linha = ['2025-1','123','CONSULTORES','Execução do Reparo','Associado','Alice','CONSULTORES'];
+  const abas = { SIGA:[cab, linha], REGULADORES:[cab, linha] };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('oauth2.googleapis.com') ? { json:async () => ({access_token:'teste'}) } : { json:async () => ({values:abas[decodeURIComponent(String(url).split('/values/')[1].split('?')[0])] || []}) };
+  try {
+    const r = await carregarTudo({saJson, sheetSinistro:'gerencial', sheetReguladores:'reguladores'});
+    assert.equal(r.processos.length, 2);
+    assert.equal(r.processos.filter(GRUPOS.consultores).length, 1);
+    assert.equal(r.processos.filter(GRUPOS.consultores)[0].setor, 'CONSULTORES');
+  } finally { globalThis.fetch = original; }
+});
 
 test('vistoria inclui somente as duas tarefas dos analistas autorizadas', () => {
   for (const tarefa of ['Comunicar Autorização', 'Analisar Necessidade de Carro Reserva']) {

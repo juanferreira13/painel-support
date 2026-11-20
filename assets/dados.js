@@ -205,7 +205,7 @@
     sinistro: () => true,   // visão geral: todos os processos
     analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS" || !!p._analistasSGA,
     reguladores: (p) => p.setor === "REGULADORES" || p._vistoriaAnalistas === true,
-    consultores: (p) => p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
+    consultores: (p) => !p._duplicadoConsultores && p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
   };
 
   // Overlay persistente (localStorage): o que o preenchimento SALVA fica aqui e os
