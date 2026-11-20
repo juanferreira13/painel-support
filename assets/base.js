@@ -189,17 +189,18 @@
     cab.append(el("th", { class: "total", scope: "col" }, "Total"));
     t.appendChild(el("thead")).append(cab);
     const corpo = t.appendChild(el("tbody"));
+    const rotuloA = (a) => /^\d{4}-\d{2}-\d{2}$/.test(a) ? dataBr(a) : /^\d{4}-\d{2}$/.test(a) ? a.slice(5, 7) + '/' + a.slice(0, 4) : vazio(a);
     for (const a of linhasM) {
-      const tr = el("tr"); tr.append(el("th", { scope: "row" }, vazio(a)));
+      const tr = el("tr"); tr.append(el("th", { scope: "row" }, rotuloA(a)));
       for (const b of colunas) {
         const v = n.get(a + "\u0001" + b) || 0;
         const td = el("td", { class: "n" + nivel(v) + (v ? " celula" : "") + (v && a === b ? " igual" : "") }, v ? nf.format(v) : "·");
         if (v) {
           if (aoClicar) {
           td.setAttribute("tabindex", "0"); td.setAttribute("role", "button");
-          td.setAttribute("aria-label", `${rotA} ${vazio(a)}, ${rotB} ${vazio(b)}: ${v}. Filtrar`);
+          td.setAttribute("aria-label", `${rotA} ${rotuloA(a)}, ${rotB} ${vazio(b)}: ${v}. Filtrar`);
           }
-          comDica(td, () => [nf.format(v) + " processos", [rotA + ": " + vazio(a), rotB + ": " + vazio(b), pct1(v, linhas.length) + " do filtrado"]]);
+          comDica(td, () => [nf.format(v) + " processos", [rotA + ": " + rotuloA(a), rotB + ": " + vazio(b), pct1(v, linhas.length) + " do filtrado"]]);
           if (aoClicar) aoAtivar(td, () => aoClicar(a, b));
         }
         tr.append(td);

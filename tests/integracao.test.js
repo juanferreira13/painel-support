@@ -1,9 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { carregarTudo, indexador, mapProcessoSiga, incorporarStatusSga, salvarVistoria } from '../api/_core.js';
+import { carregarTudo, indexador, mapProcessoSiga, incorporarStatusSga, salvarVistoria, vistoriaDosAnalistas } from '../api/_core.js';
 import { GRUPOS } from '../api/dados.js';
 import { autenticar } from '../api/_auth.js';
+
+test('vistoria inclui somente as duas tarefas dos analistas autorizadas', () => {
+  for (const tarefa of ['Comunicar Autorização', 'Analisar Necessidade de Carro Reserva']) {
+    const p = { setor: 'ANALISTAS', tarefa };
+    p._vistoriaAnalistas = vistoriaDosAnalistas(p);
+    assert.equal(GRUPOS.reguladores(p), true);
+    assert.equal(GRUPOS.analistas(p), true);
+  }
+  assert.equal(vistoriaDosAnalistas({ setor:'ANALISTAS', tarefa:'Análise do Processo' }), false);
+  assert.equal(vistoriaDosAnalistas({ setor:'CONSULTORES', tarefa:'Comunicar Autorização' }), false);
+  assert.equal(GRUPOS.reguladores({setor:'ANALISTAS', tarefa:'Análise do Processo'}), false);
+});
+
+test('as tarefas dos analistas chegam ao grupo dos reguladores na carga real', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const saJson = { client_email:'teste@example.invalid', private_key:privateKey.export({type:'pkcs8', format:'pem'}) };
+  const abas = { SIGA:[['PROTOCOLO SIGA','SETOR','Tarefa'], ['1','ANALISTAS','Comunicar Autorizacao'], ['2','ANALISTAS','Analisar Necessidade de Carro Reserva'], ['3','ANALISTAS','Análise do Processo']] };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('oauth2.googleapis.com') ? { json:async () => ({access_token:'teste'}) } : { json:async () => ({values:abas[decodeURIComponent(String(url).split('/values/')[1].split('?')[0])] || []}) };
+  try { const r = await carregarTudo({saJson, sheetSinistro:'teste', sheetReguladores:''}); assert.deepEqual(r.processos.filter(GRUPOS.reguladores).map(p=>p.protocoloSiga), ['1','2']); }
+  finally { globalThis.fetch = original; }
+});
 
 test('cabeçalhos duplicados usam o primeiro valor preenchido', () => {
   const get = indexador(['REGULADOR ANALISTA', 'REGULADOR ANALISTA']);

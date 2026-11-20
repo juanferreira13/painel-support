@@ -45,6 +45,10 @@ async function lerAba(token, sheetId, aba) {
 /* ----------------------------------------------------------- helpers de valor */
 const trim = (v) => (v == null ? "" : String(v).trim());
 const norm = (v) => trim(v).toUpperCase().replace(/\s+/g, " ");
+export function vistoriaDosAnalistas(p) {
+  const tarefa = norm(p.tarefa).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return norm(p.setor) === 'ANALISTAS' && ['COMUNICAR AUTORIZACAO', 'ANALISAR NECESSIDADE DE CARRO RESERVA'].includes(tarefa);
+}
 const nomeValido = (v) => { const s = trim(v); return /[A-Za-zÀ-ÿ]/.test(s) && !/\d/.test(s) && !/^(N[ÃA]O INFORMADO|N\/A|#REF!)$/i.test(s) ? s : ''; };
 
 // "dd/mm/aaaa" (ou "dd/mm/aa", ou já ISO) -> "aaaa-mm-dd"; vazio -> ""
@@ -332,6 +336,12 @@ export async function carregarTudo(cfg) {
   const LIXO = new Set(["", "#N/A", "N/A", "#REF!", "-", "NÃO INFORMADO", "NAO INFORMADO"]);
   const limpo = (v) => { const s = trim(v); return LIXO.has(s.toUpperCase()) ? "" : s; };
   for (const p of processos) {
+    p._vistoriaAnalistas = vistoriaDosAnalistas(p);
+    if (p._vistoriaAnalistas) {
+      p.responsavel = limpo(orcSgaColT.get(norm(p.protocoloSiga)) || '') || limpo(p.regulador);
+      p.dataRegulagem = vistoriaDe(p);
+      p.responsavelVistoria = baseVistoriaPessoa.get(norm(p.protocoloSiga)) || '';
+    }
     // regulador analista pela BASE (NUMERO -> analista): preenche sempre (resolve coluna duplicada/vazia)
     if (!p.reguladorAnalista) p.reguladorAnalista = analistaDe(p);
     if (p.setor === "REGULADORES") {
