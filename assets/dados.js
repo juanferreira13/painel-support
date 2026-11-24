@@ -231,12 +231,12 @@
   // configurado (ou offline), cai para os dados de demonstração — as telas não mudam.
   let LIVE = null;          // {processos, listas, gerado} = ao vivo; false = demo; null = ainda não decidido
   let promessaFonte = null;
-  function garantirFonte() {
-    if (LIVE !== null) return Promise.resolve(LIVE);
+  function garantirFonte(atualizar = false) {
+    if (!atualizar && LIVE !== null) return Promise.resolve(LIVE);
     if (promessaFonte) return promessaFonte;
     promessaFonte = (async () => {
       try {
-        const r = await fetch("/api/dados?setor=sinistro", { headers: { accept: "application/json" } });
+        const r = await fetch("/api/dados?setor=sinistro", { headers: { accept: "application/json" }, cache: "no-store" });
         if (!r.ok) throw new Error("http " + r.status);
         const j = await r.json();
         if (!j || j.configurado === false || !Array.isArray(j.processos)) throw new Error("sem dados ao vivo");
@@ -249,21 +249,22 @@
         GS.DB.listas = LIVE.listas;
         if (typeof GS.aoMudarFonte === "function") GS.aoMudarFonte();
       } catch (_) {
-        LIVE = false;         // mantém o demo
+        if (LIVE === null) LIVE = false; // mantém os últimos dados em falhas temporárias
       }
       return LIVE;
     })();
-    return promessaFonte;
+    return promessaFonte.finally(() => { promessaFonte = null; });
   }
 
   GS.DB = {
     fonte: GS.FONTE,
     listas: LISTAS_DEMO,
     garantir: garantirFonte,
+    atualizar: () => garantirFonte(true),
     async carregar(chave) {
       const live = await garantirFonte();
       const filtro = GRUPOS[chave] || (() => true);
-      const overlay = lerOverlay();
+      const overlay = live ? {} : lerOverlay();
       const fonte = live ? live.processos : BASE;
       const processos = fonte.filter(filtro).map((p) => aplicarOverlay(Object.assign({}, p), overlay));
       return { chave, processos, gerado: GS.GERADO, fonte: GS.FONTE, listas: GS.DB.listas,
@@ -277,9 +278,9 @@
           const resp = await fetch("/api/salvar", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ registros }) });
           const j = await resp.json().catch(() => ({}));
           if (!resp.ok) return { ok: false, total: registros.length, erro: (j && j.erro) || ("http " + resp.status) };
-          const o = lerOverlay();
-          for (const r of registros) { (o[r.protocolo] = o[r.protocolo] || {})[r.campo] = r.valor; }
-          try { localStorage.setItem(CHAVE_VALORES, JSON.stringify(o)); } catch (_) {}
+          for (const r of registros) {
+            for (const p of LIVE.processos) if (p.protocoloSiga === r.protocolo) p[r.campo] = r.valor;
+          }
           return { ok: true, total: registros.length, sheets: j };
         } catch (e) {
           return { ok: false, total: registros.length, erro: String((e && e.message) || e) };
@@ -292,7 +293,7 @@
     },
     // Resumo para o hero. Chame depois de garantir() (o início aguarda a fonte).
     resumo() {
-      const overlay = lerOverlay();
+      const overlay = LIVE ? {} : lerOverlay();
       const lista = (LIVE ? LIVE.processos : BASE).map((p) => aplicarOverlay(Object.assign({}, p), overlay));
       const total = lista.length;
       const porSetor = { analistas: lista.filter(GRUPOS.analistas).length, reguladores: lista.filter(GRUPOS.reguladores).length, consultores: lista.filter(GRUPOS.consultores).length };

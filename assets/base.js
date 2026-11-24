@@ -168,7 +168,7 @@
   }
 
   /* ----------------------------------------------------------- gráfico: matriz de calor (SIGA x SGA) */
-  function matriz(caixa, linhas, getA, getB, aoClicar, rotA, rotB) {
+  function matriz(caixa, linhas, getA, getB, aoClicar, rotA, rotB, selecionada) {
     rotA = rotA || "SIGA"; rotB = rotB || "SGA";
     if (!linhas.length) { caixa.replaceChildren(el("div", { class: "vazio" }, "Nenhum evento com os filtros atuais.")); return; }
     const n = new Map(), porA = new Map(), porB = new Map(), geral = new Map();
@@ -199,6 +199,7 @@
           if (aoClicar) {
           td.setAttribute("tabindex", "0"); td.setAttribute("role", "button");
           td.setAttribute("aria-label", `${rotA} ${rotuloA(a)}, ${rotB} ${vazio(b)}: ${v}. Filtrar`);
+          if (selecionada) td.setAttribute("aria-pressed", String(selecionada(a, b)));
           }
           comDica(td, () => [nf.format(v) + " processos", [rotA + ": " + rotuloA(a), rotB + ": " + vazio(b), pct1(v, linhas.length) + " do filtrado"]]);
           if (aoClicar) aoAtivar(td, () => aoClicar(a, b));

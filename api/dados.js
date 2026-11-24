@@ -20,7 +20,7 @@ export const GRUPOS = {
   consultores: (p) => !p._duplicadoConsultores && p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
 };
 
-const TTL = 60_000;             // 60s de cache por instância quente
+const TTL = 30_000;             // 30s de cache por instância quente
 let cache = { t: 0, dados: null, erro: null };
 
 function json(res, status, obj) {

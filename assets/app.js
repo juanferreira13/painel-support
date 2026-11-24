@@ -380,7 +380,7 @@
     limpar.addEventListener("click", () => {
       Object.assign(estado, { pessoa: "", reguladorAnalista: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                               evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataDe: "", dataAte: "",
-                              soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, soAtrasados: false });
+                              soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, soAtrasados: false, analiseFiltro: null });
       const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
       for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
@@ -441,7 +441,12 @@
   function aplicarFiltros(processos, cfg, dados, estado) {
     const termo = GS.semAcento(estado.busca || "");
     const dcampo = cfg.dataCampo || estado.dataCampo || "abertura";   // qual data o De/Até usa
+    const analiseProtocolos = estado.analiseFiltro ? new Set((dados.analises || [])
+      .filter((r) => r.data.slice(0, 7) === estado.analiseFiltro.mes && r.pessoa === estado.analiseFiltro.pessoa &&
+        (!estado.dataDe || r.data >= estado.dataDe) && (!estado.dataAte || r.data <= estado.dataAte))
+      .map((r) => norm(r.protocolo))) : null;
     return processos.filter((p) => {
+      if (analiseProtocolos && !analiseProtocolos.has(norm(p.protocoloSiga))) return false;
       if (cfg.modelo === "geral" && estado.setor && p.setor !== estado.setor) return false;
       // filtros de atributo — valem em qualquer dashboard (setados por gráfico, matriz ou select)
       if (estado.fsiga != null && p.statusSiga !== estado.fsiga) return false;
@@ -575,34 +580,40 @@
   }
 
   /* ===================================================== DASHBOARD */
+  let pararAtualizacaoDashboard = () => {};
   async function renderDashboard(chave, mount) {
     const cfg = GS.SETORES[chave];
     trilha(["Sinistro", "Dashboards", cfg.rotulo]);
     mount.replaceChildren(carregando());
     let dados = await GS.DB.carregar(chave);
+    if (rotaAtual() !== "dashboard/" + chave) return;
     // BI do setor com soSetorProprio (reguladores): considera só os processos ainda no setor
     // próprio (pelo SETOR atual no SIGA). Os que já migraram pra outro setor saem das contas,
     // gráficos e do dropdown — continuam na planilha, mas fora do BI. Mantém vazio/TODOS (conservador).
-    if (cfg.soSetorProprio) {
-      const aindaNoSetor = (p) => { const s = norm(p.setorAtual || ""); return p._vistoriaAnalistas || !s || s.includes("REGULAD") || s === "TODOS"; };
-      dados = Object.assign({}, dados, { processos: dados.processos.filter(aindaNoSetor) });
-    }
+    const limitarSetor = (d) => cfg.soSetorProprio
+      ? Object.assign({}, d, { processos: d.processos.filter((p) => { const s = norm(p.setorAtual || ""); return p._vistoriaAnalistas || !s || s.includes("REGULAD") || s === "TODOS"; }) })
+      : d;
+    dados = limitarSetor(dados);
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                      evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataCampo: "dataComunicado", dataDe: "", dataAte: "",
-                     soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, vidrosMarca: false, vidrosModelo: false };
+                     soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, vidrosMarca: false, vidrosModelo: false, analiseFiltro: null };
 
     // edição inline (ex.: Data da Vistoria Inicial no dashboard dos reguladores) -> grava no Sheets
+    let salvando = false;
     async function aoEditarCelula(p, campo, valor) {
       const anterior = p[campo]; p[campo] = valor;
-      const res = await GS.DB.salvarValores([{ protocolo: p.protocoloSiga, campo, valor }]);
-      if (res && res.ok === false) p[campo] = anterior;
-      return !(res && res.ok === false);
+      salvando = true;
+      try {
+        const res = await GS.DB.salvarValores([{ protocolo: p.protocoloSiga, campo, valor }]);
+        if (res && res.ok === false) p[campo] = anterior;
+        return !(res && res.ok === false);
+      } finally { salvando = false; }
     }
 
     mount.replaceChildren();
     mount.append(abertura(cfg, cfg.tituloDash, cfg.ledeDash));
-    const fil = construirFiltros(cfg, dados, estado, () => { lerFiltros(estado, cfg); atualizar(); });
-    const faixa = faixaAtraso(dados, cfg, estado, () => atualizar());
+    let fil = construirFiltros(cfg, dados, estado, () => { lerFiltros(estado, cfg); atualizar(); });
+    let faixa = faixaAtraso(dados, cfg, estado, () => atualizar());
     if (faixa) mount.append(faixa);
     mount.append(fil);
     const area = el("div", { class: "conteudo-sec" });
@@ -639,7 +650,19 @@
       cards.cidade = cartao("cinco", "Por cidade", "Principais cidades dos processos. Clique para filtrar.");
       cards.vistoriasMes = cartao("sete", "Vistorias iniciais por dia e regulador", "Data informada na base de vistoria inicial.");
       cards.analisesDia = cartao("sete", "Análises por dia e regulador", "Data e responsável da base de reguladores analistas.");
-      cards.analisesMes = cartao("sete", "Análises por mês e regulador", "Data e responsável da base de reguladores analistas.");
+      cards.analisesMes = cartao("sete", "Análises por mês e regulador", "Clique em uma célula para ver as análises e filtrar os processos atuais.");
+      function filtroMesDiario(card, rotulo) {
+        card.mes = GS.isoDia(new Date()).slice(0, 7);
+        card.seletorMes = el("select", { "aria-label": rotulo });
+        const campo = el("label", { class: "campo" }, rotulo);
+        campo.append(card.seletorMes);
+        card.c.insertBefore(campo, card.corpo);
+        card.seletorMes.addEventListener("change", () => { card.mes = card.seletorMes.value; atualizar(); });
+      }
+      filtroMesDiario(cards.analisesDia, "Mês das análises diárias");
+      filtroMesDiario(cards.vistoriasMes, "Mês das vistorias diárias");
+      cards.detalheAnalises = el("div", { class: "detalhe-analises" });
+      cards.analisesMes.c.append(cards.detalheAnalises);
       grade.append(cards.analisesDia.c, cards.analisesMes.c, cards.vistoriasMes.c, cards.status.c, cards.cidade.c);
       if (cfg.etapa) { cards.etapa = cartao("cinco", "Etapa · " + cfg.etapa.rotulo.toLowerCase(), "Quantos processos aguardando em cada tarefa da etapa (sem finalizados/negados). Clique numa barra para filtrar."); grade.append(cards.etapa.c); }
       if (cfg.temMatriz) { cards.matriz = cartao("sete", "Status no SIGA × status no SGA", "Quantos eventos em cada combinação."); grade.append(cards.matriz.c); }
@@ -720,9 +743,34 @@
           const historico = (lista, pessoa) => (lista || []).filter((r) => (!estado.dataDe || r.data >= estado.dataDe) && (!estado.dataAte || r.data <= estado.dataAte) && (!pessoa || norm(r.pessoa) === norm(pessoa)));
           const unicos = (lista, pessoa) => [...new Map(historico(lista, pessoa).map((r) => [r.protocolo + '|' + r.data + '|' + r.pessoa, r])).values()];
           const v = unicos(dados.vistorias, estado.pessoa), a = unicos(dados.analises, estado.reguladorAnalista);
-          G.matriz(cards.vistoriasMes.corpo, v, (p) => p.data, (p) => p.pessoa || 'Não informado', null, 'Data', 'Regulador');
-          G.matriz(cards.analisesDia.corpo, a, (p) => p.data, (p) => p.pessoa, null, 'Data', 'Regulador analista');
-          G.matriz(cards.analisesMes.corpo, a, (p) => p.data.slice(0, 7), (p) => p.pessoa, null, 'Mês', 'Regulador analista');
+          function atualizarMesDiario(card, todos, filtrados) {
+            const meses = [...new Set([GS.isoDia(new Date()).slice(0, 7), ...(todos || []).map((r) => r.data.slice(0, 7)), card.mes])].filter(Boolean).sort().reverse();
+            card.seletorMes.replaceChildren(...meses.map((mes) => el("option", { value: mes }, `${mes.slice(5, 7)}/${mes.slice(0, 4)}`)));
+            card.seletorMes.value = card.mes;
+            return filtrados.filter((r) => r.data.slice(0, 7) === card.mes);
+          }
+          G.matriz(cards.vistoriasMes.corpo, atualizarMesDiario(cards.vistoriasMes, dados.vistorias, v), (p) => p.data, (p) => p.pessoa || 'Não informado', null, 'Data', 'Regulador');
+          G.matriz(cards.analisesDia.corpo, atualizarMesDiario(cards.analisesDia, dados.analises, a), (p) => p.data, (p) => p.pessoa, null, 'Data', 'Regulador analista');
+          G.matriz(cards.analisesMes.corpo, a, (p) => p.data.slice(0, 7), (p) => p.pessoa, (mes, pessoa) => {
+            const f = estado.analiseFiltro;
+            estado.analiseFiltro = f && f.mes === mes && f.pessoa === pessoa ? null : { mes, pessoa };
+            atualizar();
+          }, 'Mês', 'Regulador analista', (mes, pessoa) => !!estado.analiseFiltro && estado.analiseFiltro.mes === mes && estado.analiseFiltro.pessoa === pessoa);
+          cards.detalheAnalises.replaceChildren();
+          if (estado.analiseFiltro) {
+            const { mes, pessoa } = estado.analiseFiltro;
+            const registros = a.filter((r) => r.data.slice(0, 7) === mes && r.pessoa === pessoa);
+            const titulo = el('p', null, `${registros.length} análises · ${mes.slice(5, 7)}/${mes.slice(0, 4)} · ${pessoa}`);
+            const limpar = el('button', { class: 'botao claro', type: 'button' }, 'Limpar seleção');
+            limpar.addEventListener('click', () => { estado.analiseFiltro = null; atualizar(); });
+            const tabela = el('table', { class: 'dados' });
+            const cab = el('tr'); for (const c of ['Protocolo SIGA', 'Data da análise', 'Regulador analista']) cab.append(el('th', { scope: 'col' }, c));
+            tabela.appendChild(el('thead')).append(cab);
+            const corpo = tabela.appendChild(el('tbody'));
+            for (const r of registros) { const tr = el('tr'); tr.append(el('td', null, r.protocolo), el('td', null, dataBr(r.data)), el('td', null, r.pessoa)); corpo.append(tr); }
+            const rolagem = el('div', { class: 'rolagem' }); rolagem.append(tabela);
+            cards.detalheAnalises.append(titulo, el('p', { class: 'sub' }, 'A lista geral mostra apenas os processos atualmente disponíveis neste setor.'), limpar, rolagem);
+          }
         }
         if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         if (cards.tarefaOrc) {
@@ -770,6 +818,37 @@
       if (s.cidade && s.cidade.tagName === "SELECT") s.cidade.value = estado.cidade;
     }
     atualizar();
+    let ativo = true, consultando = false;
+    const emEdicao = () => mount.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+    async function consultarAtualizacoes() {
+      if (!ativo || consultando || document.hidden || salvando || emEdicao()) return;
+      consultando = true;
+      try {
+        const anterior = JSON.stringify([dados.processos, dados.listas, dados.analises, dados.vistorias]);
+        await GS.DB.atualizar();
+        if (!ativo || salvando || emEdicao()) return;
+        const novos = limitarSetor(await GS.DB.carregar(chave));
+        if (!ativo || anterior === JSON.stringify([novos.processos, novos.listas, novos.analises, novos.vistorias])) return;
+        dados = novos;
+        const novoFil = construirFiltros(cfg, dados, estado, () => { lerFiltros(estado, cfg); atualizar(); });
+        for (const [k, select] of Object.entries(estado._selects)) {
+          if (select.tagName === "SELECT" && estado[k] != null && estado[k] !== "" && select.value !== estado[k]) {
+            select.append(el("option", { value: estado[k] }, estado[k])); select.value = estado[k];
+          }
+        }
+        fil.replaceWith(novoFil); fil = novoFil;
+        const novaFaixa = faixaAtraso(dados, cfg, estado, () => atualizar());
+        if (faixa && novaFaixa) faixa.replaceWith(novaFaixa);
+        else if (faixa) faixa.remove();
+        else if (novaFaixa) fil.before(novaFaixa);
+        faixa = novaFaixa;
+        atualizar();
+      } finally { consultando = false; }
+    }
+    const intervalo = setInterval(consultarAtualizacoes, 30_000);
+    const aoVoltar = () => { if (!document.hidden) consultarAtualizacoes(); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    pararAtualizacaoDashboard = () => { ativo = false; clearInterval(intervalo); document.removeEventListener("visibilitychange", aoVoltar); };
   }
 
   function indicadores(linhas, cfg, dados, estado, atualizar) {
@@ -1094,6 +1173,7 @@
     return h || "inicio";
   }
   function navegar() {
+    pararAtualizacaoDashboard();
     const rota = rotaAtual();
     marcarAtivo(rota.split("/").slice(0, 2).join("/"));
     document.body.classList.remove("menu-aberto", "com-barra");

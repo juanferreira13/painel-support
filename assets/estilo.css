@@ -220,6 +220,7 @@ table.matriz thead th { text-align: center; vertical-align: bottom; font-size: 1
 table.matriz .canto { text-align: left; font-size: 11px; color: var(--mudo); font-weight: 400; }
 table.matriz td { text-align: center; padding: 7px 6px; min-width: 52px; border-radius: 4px; color: var(--tinta); }
 table.matriz td.celula { cursor: pointer; }
+table.matriz td[aria-pressed="true"] { outline: 3px solid #2d4020; outline-offset: -3px; }
 table.matriz td.n0 { color: var(--eixo); cursor: default; }
 table.matriz td.n1 { background: var(--verde-100); }
 table.matriz td.n2 { background: var(--verde-300); }
