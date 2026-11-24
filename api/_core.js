@@ -339,6 +339,29 @@ export async function carregarTudo(cfg) {
     return p;
   }).filter((p) => p.protocoloSiga);
 
+  // Quando a data foi lançada sem responsável, usa o regulador do processo.
+  // Só preenche se houver um único nome inequívoco; não substitui o nome
+  // informado na base de vistoria nem grava o valor presumido na planilha.
+  const candidatosReg = new Map(), candidatosSiga = new Map();
+  function incluirCandidato(mapa, protocolo, nome) {
+    const k = norm(protocolo), pessoa = nomeValido(nome);
+    if (!k || !pessoa) return;
+    const nomes = mapa.get(k) || new Map();
+    nomes.set(norm(pessoa), pessoa); mapa.set(k, nomes);
+  }
+  for (const linha of reg.slice(1)) {
+    incluirCandidato(candidatosReg, getReg(linha, 'PROTOCOLO SIGA', 'NUMERO'), getReg(linha, 'REGULADOR SGA'));
+  }
+  for (const p of gerais) incluirCandidato(candidatosSiga, p.protocoloSiga, p.regulador);
+  for (const vistoria of vistorias) {
+    if (vistoria.pessoa) continue;
+    const nomes = candidatosReg.get(vistoria.protocolo) || candidatosSiga.get(vistoria.protocolo);
+    if (nomes && nomes.size === 1) {
+      vistoria.pessoa = nomes.values().next().value;
+      if (!baseVistoriaPessoa.has(vistoria.protocolo)) baseVistoriaPessoa.set(vistoria.protocolo, vistoria.pessoa);
+    }
+  }
+
   // protocolo SIGA -> processo da aba SIGA: traz "Regulador"/AM (= orçamentista),
   // Tarefa (etapa), datas e dias em atraso — campos que a aba REGULADORES pode não ter
   const sigaPorProtocolo = new Map(), sigaPorTarefa = new Map();

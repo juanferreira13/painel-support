@@ -64,6 +64,28 @@ test('cabeçalhos duplicados usam o primeiro valor preenchido', () => {
   assert.equal(get(['', 'Rafael'], 'REGULADOR ANALISTA'), 'Rafael');
 });
 
+test('vistoria sem responsável usa regulador inequívoco do processo e preserva atribuições explícitas', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const saJson = { client_email: 'teste@example.invalid', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
+  const abas = {
+    SIGA: [['PROTOCOLO SIGA', 'SETOR', 'Regulador'], ['1', 'REGULADORES', 'Outro'], ['4', 'ANALISTAS', 'Nome SIGA']],
+    REGULADORES: [['PROTOCOLO SIGA', 'REGULADOR SGA'], ['1', 'Lucas'], ['2', 'João'], ['2', 'Maria'], ['3', 'Lucas']],
+    'BASE VISTORIA INICIAL': [['NUMERO', 'REGULADOR ANALISTA', 'DATA DA ANALISE'],
+      ['1', '', '23/11/2026'], ['2', '', '23/11/2026'], ['3', 'Responsável explícito', '23/11/2026'],
+      ['4', '', '23/11/2026'], ['5', '', '23/11/2026']],
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('oauth2.googleapis.com') ? { json: async () => ({ access_token: 'teste' }) } :
+    { json: async () => ({ values: abas[decodeURIComponent(String(url).split('/values/')[1].split('?')[0])] || [] }) };
+  try {
+    const r = await carregarTudo({ saJson, sheetSinistro: 'gerencial', sheetReguladores: 'reguladores' });
+    assert.deepEqual(r.vistorias.map(v => [v.protocolo, v.pessoa]), [
+      ['1', 'Lucas'], ['2', ''], ['3', 'Responsável explícito'], ['4', 'Nome SIGA'], ['5', ''],
+    ]);
+    assert.equal(r.processos.find(p => p.protocoloSiga === '1').responsavelVistoria, 'Lucas');
+  } finally { globalThis.fetch = original; }
+});
+
 test('orçamentista, Rafael, nome fantasia e produção vêm das colunas nomeadas', async () => {
   const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   const saJson = { client_email: 'teste@example.invalid', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
