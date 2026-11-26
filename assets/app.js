@@ -183,9 +183,9 @@
   /* lista de processos: tabela ordenável e paginada */
   function listaProcessos(corpo, processos, cfg, estado, aoEditar) {
     const COLS = cfg.colunas;
-    const POR_PAGINA = 40;
-    estado.lista = estado.lista || { ordem: cfg.ordemPadrao || "diasAberto", desc: true, pagina: 0 };
+    estado.lista = estado.lista || { ordem: cfg.ordemPadrao || "diasAberto", desc: true, pagina: 0, porPagina: 20 };
     const L = estado.lista;
+    if (![10, 20, 40, 100].includes(Number(L.porPagina))) L.porPagina = 20;
     const tabelaWrap = el("div", { class: "rolagem" });
     const table = el("table", { class: "lista" });
     const thead = el("thead"), trCab = el("tr");
@@ -201,12 +201,19 @@
     tabelaWrap.append(table);
     const info = el("span");
     const pag = el("span", { class: "paginas" });
+    const seletorWrap = el("label", { class: "lista-tamanho" });
+    seletorWrap.append(el("span", null, "Processos por página"));
+    const seletor = el("select", { "aria-label": "Quantidade de processos por página" });
+    for (const qtd of [10, 20, 40, 100]) seletor.append(el("option", { value: String(qtd) }, String(qtd)));
+    seletor.value = String(L.porPagina);
+    seletorWrap.append(seletor);
     const ant = el("button", { class: "botao claro", type: "button" }, "Anterior");
     const prox = el("button", { class: "botao claro", type: "button" }, "Próxima");
     const numPag = el("span");
     pag.append(ant, numPag, prox);
     const rodape = el("div", { class: "rodape-lista" });
-    rodape.append(info, pag);
+    rodape.append(info, seletorWrap, pag);
+    seletor.addEventListener("change", () => { L.porPagina = Number(seletor.value); L.pagina = 0; desenhar(); });
     ant.addEventListener("click", () => { L.pagina--; desenhar(); });
     prox.addEventListener("click", () => { L.pagina++; desenhar(); });
 
@@ -221,9 +228,9 @@
     }
     function desenhar() {
       const ord = ordenadas();
-      const paginas = Math.max(1, Math.ceil(ord.length / POR_PAGINA));
+      const paginas = Math.max(1, Math.ceil(ord.length / L.porPagina));
       L.pagina = Math.min(Math.max(0, L.pagina), paginas - 1);
-      const inicio = L.pagina * POR_PAGINA, pagina = ord.slice(inicio, inicio + POR_PAGINA);
+      const inicio = L.pagina * L.porPagina, pagina = ord.slice(inicio, inicio + L.porPagina);
       tbody.replaceChildren(...pagina.map((p) => {
         const tr = el("tr");
         for (const col of COLS) {
