@@ -175,7 +175,7 @@ export function mapProcessoSiga(get) {
     statusSga,
     statusSiga,
     classif: trim(get("CLASSIFICAÇÃO NEGATIVA", "MOTIVO NEGADO", "CLASSIFICACAO NEGATIVA")),
-    oficina: trim(get("Oficina", "OFICINA SGA", "OFICINAS")),
+    oficina: trim(get("OFICINA SIGA", "Oficina", "OFICINA")),
     participacao: paraNumero(get("PARTICIPAÇÃO", "PARTICIPACAO")),
     // campos extras (para o gerencial / listas / acusar)
     veiculo: trim(get("Veículo", "Veiculo", "Tipo Veículo")),
@@ -193,6 +193,9 @@ export function mapProcessoSiga(get) {
     regulador: trim(get("Regulador", "REGULADOR SGA")),
     voluntario: trim(get("VOLUNTARIO", "VOLUNTÁRIO")),
     dataEvento: paraIso(get("DATA EVENTO")),
+    dataEntradaOficina: paraIso(get("DATA ENTRADA OFICINA", "DATA DE ENTRADA NA OFICINA", "ENTRADA NA OFICINA")),
+    dataInicioReparo: paraIso(get("DATA INÍCIO REPARO", "DATA INICIO REPARO", "DATA DE INÍCIO DO REPARO", "DATA DE INICIO DO REPARO", "INÍCIO DO REPARO", "INICIO DO REPARO")),
+    dataEntregaVeiculo: paraIso(get("DATA ENTREGA VEÍCULO", "DATA ENTREGA VEICULO", "DATA DE ENTREGA DO VEÍCULO", "DATA DE ENTREGA DO VEICULO", "ENTREGA DO VEÍCULO", "ENTREGA DO VEICULO")),
     campoAdicional: trim(get("CAMPO ADICIONAL", "CAMPO ADICIONAL EVENTO")),
     consultor: trim(get("CONSULTOR COMERCIAL", "CONSULTOR", "VOLUNTARIO", "VOLUNTÁRIO")),
     // manuais (não vêm da aba SIGA)
@@ -275,11 +278,11 @@ function mapProcessoRegulador(get) {
 
 /* ----------------------------------------------------------- carga completa */
 export async function carregarTudo(cfg) {
-  const { saJson, sheetSinistro, sheetReguladores } = cfg;
+  const { saJson, sheetSinistro, sheetReguladores, sheetConsultores } = cfg;
   const token = await obterToken(saJson);
 
   // Lê as abas necessárias EM PARALELO (corta a latência e evita timeout da função na Vercel).
-  const [siga, baseAna, baseVis, reg, ofiAba, sga, atualizacao] = await Promise.all([
+  const [siga, baseAna, baseVis, reg, ofiAba, sga, atualizacao, consultores] = await Promise.all([
     lerAba(token, sheetSinistro, "SIGA"),
     lerAba(token, sheetSinistro, "BASE REGULADOR ANALISTA").catch(() => []),
     lerAba(token, sheetSinistro, "BASE VISTORIA INICIAL").catch(() => []),
@@ -287,6 +290,7 @@ export async function carregarTudo(cfg) {
     lerAba(token, sheetSinistro, "OFICINAS").catch(() => []),
     lerAba(token, sheetSinistro, "SGA!A:AF"),
     lerAba(token, sheetSinistro, "_ATUALIZACAO_INTEGRADOR!A1:B2").catch(() => []),
+    sheetConsultores ? lerAba(token, sheetConsultores, "CONSULTORES TEC.") : Promise.resolve([]),
   ]);
 
   // Gerencial / analistas / consultores: aba SIGA (todos os sinistros)
@@ -430,6 +434,45 @@ export async function carregarTudo(cfg) {
     p.cnpj = trim(g('CNPJ', 'CPF/CNPJ')) || p.cnpj;
   }
   incorporarStatusSga(processos, sga);
+
+  // Complementa oficina SIGA e marcos do reparo com a fonte mantida pelos consultores.
+  // A chave usa protocolo + tarefa; placa desempata quando há mais de uma linha para a mesma tarefa.
+  if (consultores.length > 1) {
+    const getConsultor = indexador(consultores[0] || []);
+    const semAcento = (v) => norm(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const porProtocoloConsultor = new Map();
+    for (const linha of consultores.slice(1)) {
+      const get = (...nomes) => getConsultor(linha, ...nomes);
+      const protocolo = semAcento(get("PROTOCOLO SIGA"));
+      if (!protocolo) continue;
+      const registros = porProtocoloConsultor.get(protocolo) || [];
+      registros.push({
+        tarefa: semAcento(get("Tarefa", "TAREFA")),
+        placa: semAcento(get("Placa", "PLACA")),
+        oficina: trim(get("OFICINA SIGA", "OFICINA")),
+        entrada: paraIso(get("DATA ENTRADA OFICINA")),
+        inicio: paraIso(get("DATA INÍCIO REPARO", "DATA INICIO REPARO")),
+        liberacao: paraIso(get("DATA LIBERAÇÃO", "DATA LIBERACAO")),
+      });
+      porProtocoloConsultor.set(protocolo, registros);
+    }
+    for (const p of processos) {
+      const registros = porProtocoloConsultor.get(semAcento(p.protocoloSiga)) || [];
+      if (!registros.length) continue;
+      const tarefa = semAcento(p.tarefa), placa = semAcento(p.placaSiga);
+      let candidatos = tarefa ? registros.filter((r) => r.tarefa === tarefa) : registros;
+      if (placa) {
+        const porPlaca = candidatos.filter((r) => r.placa === placa);
+        if (porPlaca.length) candidatos = porPlaca;
+      }
+      if (candidatos.length !== 1) continue;
+      const r = candidatos[0];
+      if (r.oficina) p.oficina = r.oficina;
+      p.dataEntradaOficina = r.entrada;
+      p.dataInicioReparo = r.inicio;
+      p.dataEntregaVeiculo = r.liberacao;
+    }
+  }
   const distintos = (arr, campo, filtro) => [...new Set(arr.filter(filtro || (() => true)).map((p) => limpo(p[campo])).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   // setores reais, por frequência (desc)
   const contSetor = new Map();

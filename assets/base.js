@@ -168,7 +168,7 @@
   }
 
   /* ----------------------------------------------------------- gráfico: matriz de calor (SIGA x SGA) */
-  function matriz(caixa, linhas, getA, getB, aoClicar, rotA, rotB, selecionada) {
+  function matriz(caixa, linhas, getA, getB, aoClicar, rotA, rotB, selecionada, classeCelula) {
     rotA = rotA || "SIGA"; rotB = rotB || "SGA";
     if (!linhas.length) { caixa.replaceChildren(el("div", { class: "vazio" }, "Nenhum evento com os filtros atuais.")); return; }
     const n = new Map(), porA = new Map(), porB = new Map(), geral = new Map();
@@ -194,7 +194,8 @@
       const tr = el("tr"); tr.append(el("th", { scope: "row" }, rotuloA(a)));
       for (const b of colunas) {
         const v = n.get(a + "\u0001" + b) || 0;
-        const td = el("td", { class: "n" + nivel(v) + (v ? " celula" : "") + (v && a === b ? " igual" : "") }, v ? nf.format(v) : "·");
+        const extra = v && classeCelula ? classeCelula(a, b) : "";
+        const td = el("td", { class: "n" + nivel(v) + (v ? " celula" : "") + (v && a === b ? " igual" : "") + (extra ? " " + extra : "") }, v ? nf.format(v) : "·");
         if (v) {
           if (aoClicar) {
           td.setAttribute("tabindex", "0"); td.setAttribute("role", "button");

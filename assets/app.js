@@ -56,7 +56,44 @@
     const v = p[col.key];
     return v === null || v === undefined ? "" : v;
   }
-  const divergente = (p) => p.statusSga !== "" && p.statusSiga !== "" && p.statusSiga !== p.statusSga;
+  const statusNorm = (v) => GS.semAcento(v).trim().replace(/\s+/g, " ");
+  const statusSemComparacao = new Set(["EXCLUIR", "NOTIFICADO", "NOTIFICADOS", "NOTIFICADA", "ONLINE"]);
+  const divergente = (p) => {
+    const siga = statusNorm(p.statusSiga), sga = statusNorm(p.statusSga);
+    return !!siga && !!sga && siga !== sga && !statusSemComparacao.has(siga) && !statusSemComparacao.has(sga);
+  };
+  const classeStatusMatriz = (a, b) => {
+    const siga = statusNorm(a), sga = statusNorm(b);
+    if (!siga || !sga || statusSemComparacao.has(siga) || statusSemComparacao.has(sga)) return "";
+    return siga === sga ? "status-ok" : "status-divergente";
+  };
+  const negadoEmAlgumSistema = (p) => statusNorm(p.statusSiga) === "NEGADO" || statusNorm(p.statusSga) === "NEGADO";
+  const motivoNegativaValido = (v) => !!norm(v) && !["NAO INFORMADO", "N/A", "NA", "#N/A", "-", "0"].includes(statusNorm(v));
+  const negadoSemMotivo = (p) => negadoEmAlgumSistema(p) && !motivoNegativaValido(p.classif);
+  const acompanhamentoDiretoria = (p) => ["LAUDO DO COMITE", "ANALISAR PARECER DO COMITE"].includes(statusNorm(p.tarefa));
+  const vidro = (p) => statusNorm(p.setor) === "VIDROS" || statusNorm(p.evento) === "VIDROS";
+  const dataValida = (v) => {
+    const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return false;
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
+  };
+  const statusIsDocPendente = (v) => ["DOC PENDENTE", "DOCUMENTO PENDENTE", "DOCUMENTOS PENDENTES"].includes(statusNorm(v));
+  const semAutorizacaoVidros = (p) => vidro(p) && !statusIsDocPendente(p.statusSiga) && !statusIsDocPendente(p.statusSga) && !negadoEmAlgumSistema(p) && !dataValida(p.dataAutorizado);
+  const semAutorizacaoRegulador = (p) => statusNorm(p.setor) === "REGULADORES" && !negadoEmAlgumSistema(p) && !(GS.semAcento(p.tarefa).includes("ANALISE") && GS.semAcento(p.tarefa).includes("PROCESSO")) && !dataValida(p.dataAutorizado);
+  const oficinaNormalizada = (v) => GS.semAcento(v).replace(/[^A-Z0-9]/g, "");
+  const oficinaDivergente = (p) => oficinaNormalizada(p.oficina) !== oficinaNormalizada(p.oficinaSga) && (!!oficinaNormalizada(p.oficina) || !!oficinaNormalizada(p.oficinaSga));
+  function etapasDatasConsultor(p) {
+    const tarefa = GS.semAcento(p.tarefa);
+    return {
+      entrada: tarefa.includes("ENTRADA DO VEICULO NA OFICINA") || tarefa.includes("EXECUCAO DO REPARO") || tarefa.includes("CONFIRMAR ENTREGA DO VEICULO"),
+      reparo: tarefa.includes("EXECUCAO DO REPARO") || tarefa.includes("CONFIRMAR ENTREGA DO VEICULO"),
+      entrega: tarefa.includes("CONFIRMAR ENTREGA DO VEICULO") || tarefa.includes("ENTREGA DO VEICULO"),
+    };
+  }
+  const semDataEntradaOficina = (p) => etapasDatasConsultor(p).entrada && !dataValida(p.dataEntradaOficina);
+  const semDataInicioReparo = (p) => etapasDatasConsultor(p).reparo && !dataValida(p.dataInicioReparo);
+  const semDataEntregaVeiculo = (p) => etapasDatasConsultor(p).entrega && !dataValida(p.dataEntregaVeiculo);
 
   /* ===================================================== menu lateral + topo */
   // Setores que o usuário logado pode ver (GS.PERMITIDOS vem do /api/dados).
@@ -247,7 +284,9 @@
             td.append(inp);
           } else {
             const val = valorColuna(p, col, cfg);
-            if (col.difere && divergente(p) && val) td.append(el("span", { class: "difere", title: "Diferente do status no SIGA" }, val));
+            if (["oficina", "oficinaSga"].includes(col.key) && cfg.chave === "consultores" && oficinaDivergente(p) && val)
+              td.append(el("span", { class: "difere-oficina", title: "Nome fantasia diferente entre SIGA e SGA" }, val));
+            else if (col.difere && divergente(p) && val) td.append(el("span", { class: "difere", title: "Diferente do status no SIGA" }, val));
             else td.textContent = val === "" ? "—" : val;
           }
           tr.append(td);
@@ -387,7 +426,7 @@
     limpar.addEventListener("click", () => {
       Object.assign(estado, { pessoa: "", reguladorAnalista: "", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                               evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataDe: "", dataAte: "",
-                              soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, soAtrasados: false, analiseFiltro: null });
+                              soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, semAutorizacao: false, oficinaDivergente: false, semDataEntradaOficina: false, semDataInicioReparo: false, semDataEntregaVeiculo: false, soEtapa: false, soAtrasados: false, analiseFiltro: null });
       const naoFiltrado = { situacao: "*", fsiga: "*", fsga: "*" };
       for (const k in selects) { const s = selects[k]; if (s.tagName === "INPUT") s.value = ""; else s.value = naoFiltrado[k] || ""; }
       aoMudar();
@@ -474,9 +513,14 @@
       if (estado.dataAte && (p[dcampo] || "") > estado.dataAte) return false;
       if (estado.soDivergente && !divergente(p)) return false;
       if (estado.semParticipacao && (p.participacao || 0) > 0) return false;
-      if (estado.negadoSemMotivo && !(norm(p.statusSiga) === "NEGADO" && norm(p.statusSga) === "NEGADO" && !norm(p.classif))) return false;
+      if (estado.negadoSemMotivo && !negadoSemMotivo(p)) return false;
       if (estado.semOrcamentista && !(norm(p.responsavel) === "" && !(GS.semAcento(p.tarefa).includes("ANALISE") && GS.semAcento(p.tarefa).includes("PROCESSO")))) return false;
-      if (estado.semAnalista && norm(p.reguladorAnalista) !== "") return false;
+      if (estado.semAnalista && (cfg.chave === "analistas" ? !!norm(p.analista) : !!norm(p.reguladorAnalista))) return false;
+      if (estado.semAutorizacao && !(cfg.chave === "reguladores" ? semAutorizacaoRegulador(p) : semAutorizacaoVidros(p))) return false;
+      if (estado.oficinaDivergente && !oficinaDivergente(p)) return false;
+      if (estado.semDataEntradaOficina && !semDataEntradaOficina(p)) return false;
+      if (estado.semDataInicioReparo && !semDataInicioReparo(p)) return false;
+      if (estado.semDataEntregaVeiculo && !semDataEntregaVeiculo(p)) return false;
       if (estado.pessoa && pessoaDe(p, cfg) !== estado.pessoa) return false;
       if (cfg.modelo === "pendencia") {
         if (estado.situacao !== null && estado.situacao !== undefined && norm(p.situacao) !== estado.situacao) return false;
@@ -598,12 +642,12 @@
     // próprio (pelo SETOR atual no SIGA). Os que já migraram pra outro setor saem das contas,
     // gráficos e do dropdown — continuam na planilha, mas fora do BI. Mantém vazio/TODOS (conservador).
     const limitarSetor = (d) => cfg.soSetorProprio
-      ? Object.assign({}, d, { processos: d.processos.filter((p) => { const s = norm(p.setorAtual || ""); return p._vistoriaAnalistas || !s || s.includes("REGULAD") || s === "TODOS"; }) })
+      ? Object.assign({}, d, { processos: d.processos.filter((p) => { const s = norm(p.setorAtual || ""); return acompanhamentoDiretoria(p) || p._vistoriaAnalistas || !s || s.includes("REGULAD") || s === "TODOS"; }) })
       : d;
     dados = limitarSetor(dados);
     const estado = { pessoa: "", reguladorAnalista: "", regDim: "orcamentista", situacao: null, pend: "", statusRegulacao: "", busca: "", setor: "", fsiga: null, fsga: null,
                      evento: "", cobertura: "", marca: "", modelo: "", uf: "", cidade: "", cooperativa: "", consultor: "", tarefa: "", dataCampo: "dataComunicado", dataDe: "", dataAte: "",
-                     soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, soEtapa: false, vidrosMarca: false, vidrosModelo: false, analiseFiltro: null };
+                     soDivergente: false, semParticipacao: false, negadoSemMotivo: false, semOrcamentista: false, semAnalista: false, semAutorizacao: false, oficinaDivergente: false, semDataEntradaOficina: false, semDataInicioReparo: false, semDataEntregaVeiculo: false, soEtapa: false, vidrosMarca: false, vidrosModelo: false, analiseFiltro: null };
 
     // edição inline (ex.: Data da Vistoria Inicial no dashboard dos reguladores) -> grava no Sheets
     let salvando = false;
@@ -710,7 +754,10 @@
     else grade.append(listaCard.c);
 
     function atualizar() {
-      const linhas = aplicarFiltros(dados.processos, cfg, dados, estado);
+      const tarefasDiretoria = new Set(["LAUDO DO COMITE", "ANALISAR PARECER DO COMITE"]);
+      const acompanharDiretoria = chave === "reguladores" && tarefasDiretoria.has(statusNorm(estado.tarefa));
+      const linhasTabela = aplicarFiltros(dados.processos, cfg, dados, estado).filter((p) => acompanharDiretoria || !acompanhamentoDiretoria(p));
+      const linhas = chave === "reguladores" ? linhasTabela.filter((p) => !acompanhamentoDiretoria(p)) : linhasTabela;
       if (cards.especiais) {
         const vistos = new Set();
         const especiais = dados.processos.filter((p) => {
@@ -737,7 +784,7 @@
         if (cards.evento) barrasPorCampo(cards.evento.corpo, linhas, (p) => p.evento || "", null, togFil("evento"), estado, "evento", 12);
         if (cards.cobertura) barrasPorCampo(cards.cobertura.corpo, linhas, (p) => p.cobertura || "", null, togFil("cobertura"), estado, "cobertura", 12);
         if (cards.cidade) barrasPorCampo(cards.cidade.corpo, linhas, (p) => p.cidade || "", null, togFil("cidade"), estado, "cidade", 12);
-        if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
+        if (cards.matriz) G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); }, "Status SIGA", "Status SGA", null, classeStatusMatriz);
         if (cards.oficinas) barrasPorCampo(cards.oficinas.corpo, dados.listas.oficinas || [], (o) => o.consultor || '', null, null, null, null, 20);
       } else if (cfg.modelo === "regulacao") {
         barrasPorCampo(cards.status.corpo, linhas, (p) => p.statusSga || "", null, (k) => { estado.fsga = estado.fsga === k ? null : k; sincFiltros(); atualizar(); }, estado, "fsga", 12);
@@ -803,8 +850,13 @@
         G.matriz(cards.matriz.corpo, linhas, (p) => p.statusSiga, (p) => p.statusSga, (a, b) => { estado.fsiga = a; estado.fsga = b; sincFiltros(); atualizar(); });
         motivosNegativa(cards.motivos.corpo, linhas);
       }
-      listaProcessos(listaCard.corpo, linhas, cfg, estado, aoEditarCelula);
-      for (const s of listaCard.c.querySelectorAll(".lista-sub")) s.textContent = `${nf.format(linhas.length)} de ${nf.format(dados.processos.length)} processos, conforme os filtros acima.`;
+      listaProcessos(listaCard.corpo, linhasTabela, cfg, estado, aoEditarCelula);
+      for (const s of listaCard.c.querySelectorAll(".lista-sub")) {
+        const totalTabela = `${nf.format(linhasTabela.length)} de ${nf.format(dados.processos.length)} processos, conforme os filtros acima.`;
+        s.textContent = acompanharDiretoria
+          ? `${totalTabela} Acompanhamento da Diretoria; fora dos indicadores de produção dos reguladores.`
+          : totalTabela;
+      }
       exportar.onclick = () => {
         const cab = cfg.colunas.map((c) => c.rot);
         GS.exportarCsv(`dashboard-${chave}.csv`, cab, (estado.ordenadas || linhas).map((p) => cfg.colunas.map((c) => valorColuna(p, c, cfg))));
@@ -858,11 +910,28 @@
     pararAtualizacaoDashboard = () => { ativo = false; clearInterval(intervalo); document.removeEventListener("visibilitychange", aoVoltar); };
   }
 
+  function indicadorAlerta(chave, rotulo, linhas, estado, atualizar, icone, cor, notaBase) {
+    const ativo = !!estado[chave], b = el("button", { type: "button", class: "indicador" + (ativo ? " ativo" : ""), "aria-pressed": String(ativo) });
+    const r = el("div", { class: "rotulo" });
+    r.append(svgIcone(ICONES[icone], cor, 15), el("span", null, rotulo));
+    b.append(r, el("div", { class: "valor" }, nf.format(linhas.length)), el("div", { class: "nota" }, ativo ? "filtrando · clique para tirar" : `${pct(linhas.length, estado._totalIndicadores || linhas.length)} · ${notaBase || "clique para ver"}`));
+    b.addEventListener("click", () => { estado[chave] = !ativo; atualizar(); });
+    return b;
+  }
   function indicadores(linhas, cfg, dados, estado, atualizar) {
+    estado._totalIndicadores = linhas.length;
     if (cfg.pessoaCampo === 'analista') {
       const contagem = new Map();
       for (const p of linhas.filter((p) => !p._analistasSGA)) { const s = norm(p.statusSga) || 'Não informado'; contagem.set(s, (contagem.get(s) || 0) + 1); }
-      return [...contagem].sort((a, b) => b[1] - a[1]).map(([s, n]) => indicadorFixo(s, nf.format(n), 'processos no SGA', 'info'));
+      const proprios = linhas.filter((p) => !p._analistasSGA);
+      const alertas = [
+        indicadorAlerta("semAnalista", "Sem analista", proprios.filter((p) => !norm(p.analista)), estado, atualizar, "info", "var(--serio)"),
+        indicadorAlerta("soDivergente", "Status divergente", proprios.filter(divergente), estado, atualizar, "info", "var(--critico)"),
+        indicadorAlerta("semParticipacao", "Sem participação", proprios.filter((p) => !(p.participacao > 0)), estado, atualizar, "dinheiro", "var(--critico)"),
+        indicadorAlerta("negadoSemMotivo", "Negado sem motivo", linhas.filter(negadoSemMotivo), estado, atualizar, "atraso", "var(--critico)"),
+        indicadorAlerta("semAutorizacao", "Vidros sem data de autorização", linhas.filter(semAutorizacaoVidros), estado, atualizar, "atraso", "var(--critico)"),
+      ];
+      return [...[...contagem].sort((a, b) => b[1] - a[1]).map(([s, n]) => indicadorFixo(s, nf.format(n), 'processos no SGA', 'info')), ...alertas];
     }
     if (cfg.modelo === "pendencia") {
       const n = { "PREENCHER": 0, "ATRASADO": 0, "EM DIA": 0, "CONCLUÍDO": 0, "SEM TAREFA": 0 };
@@ -879,9 +948,15 @@
       }
       // "acusar" (clicáveis): status divergente, sem participação, negado×negado sem motivo
       const acusar = [
-        { k: "soDivergente", rot: "Status divergente", icone: "info", cor: "var(--aviso)", conta: linhas.filter(divergente).length },
+        { k: "soDivergente", rot: "Status divergente", icone: "info", cor: "var(--critico)", conta: linhas.filter(divergente).length },
         { k: "semParticipacao", rot: "Sem participação", icone: "dinheiro", cor: "var(--serio)", conta: linhas.filter((p) => (p.participacao || 0) <= 0).length },
-        { k: "negadoSemMotivo", rot: "Negado sem motivo", icone: "atraso", cor: "var(--critico)", conta: linhas.filter((p) => norm(p.statusSiga) === "NEGADO" && norm(p.statusSga) === "NEGADO" && !norm(p.classif)).length },
+        { k: "negadoSemMotivo", rot: "Negado sem motivo", icone: "atraso", cor: "var(--critico)", conta: linhas.filter(negadoSemMotivo).length },
+        ...(cfg.chave === "consultores" ? [
+          { k: "oficinaDivergente", rot: "Oficina divergente/ausente (SIGA × SGA)", icone: "info", cor: "var(--critico)", conta: linhas.filter(oficinaDivergente).length },
+          { k: "semDataEntradaOficina", rot: "Sem data de entrada na oficina", icone: "atraso", cor: "var(--critico)", conta: linhas.filter(semDataEntradaOficina).length },
+          { k: "semDataInicioReparo", rot: "Sem início dos reparos", icone: "atraso", cor: "var(--critico)", conta: linhas.filter(semDataInicioReparo).length },
+          { k: "semDataEntregaVeiculo", rot: "Sem liberação/entrega do veículo", icone: "atraso", cor: "var(--critico)", conta: linhas.filter(semDataEntregaVeiculo).length },
+        ] : []),
       ];
       for (const a of acusar) {
         const on = estado[a.k];
@@ -932,9 +1007,10 @@
     // "acusar" (clicáveis): negado sem motivo, sem orçamentista (exceto Análise do Processo), sem analista
     const sa = GS.semAcento;
     const acusar = [
-      { k: "negadoSemMotivo", rot: "Negado sem motivo", icone: "atraso", cor: "var(--critico)", conta: linhas.filter((p) => norm(p.statusSiga) === "NEGADO" && norm(p.statusSga) === "NEGADO" && !norm(p.classif)).length },
+      { k: "negadoSemMotivo", rot: "Negado sem motivo", icone: "atraso", cor: "var(--critico)", conta: linhas.filter(negadoSemMotivo).length },
       { k: "semOrcamentista", rot: "Sem orçamentista", icone: "info", cor: "var(--aviso)", conta: linhas.filter((p) => norm(p.responsavel) === "" && !(sa(p.tarefa).includes("ANALISE") && sa(p.tarefa).includes("PROCESSO"))).length },
       { k: "semAnalista", rot: "Sem reg. analista", icone: "info", cor: "var(--serio)", conta: linhas.filter((p) => norm(p.reguladorAnalista) === "").length },
+      { k: "semAutorizacao", rot: "Sem data de autorização", icone: "atraso", cor: "var(--critico)", conta: linhas.filter(semAutorizacaoRegulador).length },
     ];
     for (const a of acusar) {
       const on = estado[a.k];
@@ -957,15 +1033,15 @@
     return [
       { rot: singular(cfg), valor: () => 0 },
       { rot: "Processos", valor: (g) => g.length },
-      { rot: "A preencher", valor: c("PREENCHER") },
+      ...(GS.FONTE.live ? [] : [{ rot: "A preencher", valor: c("PREENCHER") }]),
       { rot: "Atrasados", valor: c("ATRASADO") },
       { rot: "Em dia", valor: c("EM DIA") },
       { rot: "Concluídos", valor: c("CONCLUÍDO") },
       ...(dados.processos.some((p) => p._somenteSGA) ? [{ rot: "Sem tarefa SIGA", valor: c("SEM TAREFA") }] : []),
-      { rot: "Preenchido", prog: (g) => {
+      ...(!GS.FONTE.live ? [{ rot: "Preenchido", prog: (g) => {
         const comTarefa = g.filter((p) => !p._somenteSGA);
         return [comTarefa.filter((p) => pendencia(p, dados) !== "PREENCHER").length, comTarefa.length];
-      } },
+      } }] : []),
     ];
   }
   function colsPessoaReg(cfg, rotulo) {
@@ -997,7 +1073,7 @@
   function motivosNegativa(corpo, linhas) {
     const n = new Map(); let total = 0;
     for (const p of linhas) {
-      if (p.statusSiga === "NEGADO" || p.statusSga === "NEGADO") { const k = p.classif || "(sem classificação)"; n.set(k, (n.get(k) || 0) + 1); total++; }
+      if (negadoEmAlgumSistema(p)) { const k = motivoNegativaValido(p.classif) ? p.classif : "(sem classificação)"; n.set(k, (n.get(k) || 0) + 1); total++; }
     }
     const ordenado = [...n.entries()].sort((a, b) => b[1] - a[1]);
     const itens = ordenado.slice(0, 9).map(([nome, valor]) => ({ nome, valor, unidade: "evento", unidadeP: "eventos" }));

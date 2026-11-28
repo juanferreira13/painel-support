@@ -12,11 +12,14 @@ export const maxDuration = 30;   // Vercel: dá folga pra leitura do Sheets (evi
 
 const TODOS = ["sinistro", "analistas", "reguladores", "consultores"];
 
+const tarefasAcompanhamentoReguladores = new Set(["LAUDO DO COMITE", "ANALISAR PARECER DO COMITE"]);
+const tarefaNormalizada = (p) => String(p.tarefa || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+
 const FONTE = { tipo: "sheets", rotulo: "Dados ao vivo (Sheets)", live: true };
 export const GRUPOS = {
   sinistro: () => true,
   analistas: (p) => p.setor === "ANALISTAS" || p.setor === "VIDROS" || !!p._analistasSGA,
-  reguladores: (p) => p.setor === "REGULADORES" || p._vistoriaAnalistas === true,
+  reguladores: (p) => p.setor === "REGULADORES" || p._vistoriaAnalistas === true || tarefasAcompanhamentoReguladores.has(tarefaNormalizada(p)),
   consultores: (p) => !p._duplicadoConsultores && p.evento !== "VIDROS" && (p.porTarefa === "CONSULTORES" || (!p.porTarefa && p.setor === "CONSULTORES")),
 };
 
@@ -34,6 +37,7 @@ export default async function handler(req, res) {
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const sheetSinistro = process.env.SHEET_SINISTRO;
   const sheetReguladores = process.env.SHEET_REGULADORES || "";
+  const sheetConsultores = process.env.SHEET_CONSULTORES || "";
   if (!saJson || !sheetSinistro) {
     return json(res, 501, { configurado: false, erro: "Defina GOOGLE_SERVICE_ACCOUNT_JSON e SHEET_SINISTRO nas variáveis da Vercel." });
   }
@@ -48,7 +52,7 @@ export default async function handler(req, res) {
   try {
     const agora = Date.now();
     if (!cache.dados || agora - cache.t > TTL) {
-      cache = { t: agora, dados: await carregarTudo({ saJson, sheetSinistro, sheetReguladores }), erro: null };
+      cache = { t: agora, dados: await carregarTudo({ saJson, sheetSinistro, sheetReguladores, sheetConsultores }), erro: null };
     }
     const { processos, listas, gerado, analises, vistorias } = cache.dados;
     const saida = processos.filter(vePermitido);
