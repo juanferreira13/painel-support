@@ -81,3 +81,91 @@ export function autenticar(cabecalho, env) {
   if (!permitidos) return null;
   return { user: cred.user, papel: reg.papel, permitidos };
 }
+
+// Valida usuário+senha direto (usado por /api/login). Devolve o registro ou null.
+export function validarSenha(usuario, senha, env) {
+  const reg = lerUsuarios(env)[String(usuario || "")];
+  if (!reg || reg.senha === "" || reg.senha !== String(senha == null ? "" : senha)) return null;
+  const permitidos = PERMISSOES[reg.papel];
+  if (!permitidos) return null;
+  return { user: String(usuario), papel: reg.papel, permitidos };
+}
+
+/* ---------------- sessão por cookie (tira o popup do Basic Auth) ----------------
+ * A tela /login.html grava um cookie de sessão ASSINADO (HMAC-SHA256 com a env
+ * SESSION_SECRET). O middleware e /api/dados verificam esse cookie; sem ele, o
+ * middleware redireciona pra /login — sem mandar WWW-Authenticate, então o
+ * navegador NÃO mostra o popup. Só usa Web Crypto (crypto.subtle), que existe
+ * no Edge e no Node. VIEW_USERS continua sendo a fonte dos logins/senhas. */
+export const COOKIE_SESSAO = "gs_sessao";
+export const HORAS_SESSAO = 12;
+
+const _enc = new TextEncoder();
+const _dec = new TextDecoder();
+function _b64url(bytes) {
+  const b = new Uint8Array(bytes); let s = "";
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function _deB64url(str) {
+  let s = String(str).replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s); const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function _chave(segredo) {
+  return crypto.subtle.importKey("raw", _enc.encode(segredo), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+
+// lê o valor de um cookie do cabeçalho "Cookie"
+export function lerCookie(cabecalho, nome) {
+  for (const parte of String(cabecalho || "").split(";")) {
+    const i = parte.indexOf("=");
+    if (i > 0 && parte.slice(0, i).trim() === nome) return parte.slice(i + 1).trim();
+  }
+  return "";
+}
+
+// monta o Set-Cookie da sessão (maxAgeSeg=0 apaga o cookie — logout)
+export function cookieSessao(token, maxAgeSeg) {
+  const base = `${COOKIE_SESSAO}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+  return maxAgeSeg == null ? base : `${base}; Max-Age=${maxAgeSeg}`;
+}
+
+// assina { user, papel } -> "payload.assinatura"; null se faltar SESSION_SECRET
+export async function assinarSessao(dados, env, horas = HORAS_SESSAO) {
+  const segredo = env && env.SESSION_SECRET;
+  if (!segredo) return null;
+  const payload = { u: String(dados.user || ""), p: String(dados.papel || ""), exp: Date.now() + horas * 3600e3 };
+  const corpo = _b64url(_enc.encode(JSON.stringify(payload)));
+  const assin = await crypto.subtle.sign("HMAC", await _chave(segredo), _enc.encode(corpo));
+  return corpo + "." + _b64url(assin);
+}
+
+// verifica o token do cookie -> { user, papel, permitidos } ou null
+export async function verificarSessao(token, env) {
+  const segredo = env && env.SESSION_SECRET;
+  if (!segredo || !token) return null;
+  const ponto = String(token).indexOf(".");
+  if (ponto < 1) return null;
+  const corpo = token.slice(0, ponto), assin = token.slice(ponto + 1);
+  let ok = false;
+  try { ok = await crypto.subtle.verify("HMAC", await _chave(segredo), _deB64url(assin), _enc.encode(corpo)); } catch (_) { return null; }
+  if (!ok) return null;
+  let payload;
+  try { payload = JSON.parse(_dec.decode(_deB64url(corpo))); } catch (_) { return null; }
+  if (!payload || typeof payload.exp !== "number" || payload.exp < Date.now()) return null;
+  const permitidos = PERMISSOES[payload.p];
+  if (!permitidos) return null;
+  return { user: payload.u, papel: payload.p, permitidos };
+}
+
+// resolve o acesso de uma requisição: cookie de sessão primeiro, Basic depois (legado/API).
+// funciona com Request do Edge (headers.get) e com req do Node (headers.*)
+export async function autenticarReq(req, env) {
+  const h = (nome) => (req.headers && typeof req.headers.get === "function") ? req.headers.get(nome) : (req.headers && req.headers[nome]);
+  const porCookie = await verificarSessao(lerCookie(h("cookie"), COOKIE_SESSAO), env);
+  if (porCookie) return porCookie;
+  return autenticar(h("authorization"), env);
+}

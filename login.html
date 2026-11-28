@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Entrar — Painel do Sinistro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  :root { --verde:#a9c927; --verde-700:#5c7007; --tinta:#2d350a; --texto:#373435; --mudo:#8c898a; --borda:#d9d7d0; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+         background:#f3f4ee; font-family:"Poppins","Segoe UI",system-ui,sans-serif; color:var(--texto); }
+  .cartao { width:380px; max-width:100%; background:#fff; border:0.5px solid #e6e4df; border-radius:16px; padding:30px 30px 24px; }
+  .marca { display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+  .logo { width:44px; height:44px; border-radius:12px; background:var(--verde); color:var(--tinta);
+          display:flex; align-items:center; justify-content:center; font-weight:700; font-size:17px; letter-spacing:.5px; }
+  .marca .nome b { display:block; font-weight:700; font-size:16px; }
+  .marca .nome small { font-size:10px; letter-spacing:3px; text-transform:uppercase; color:#a0a09b; }
+  h1 { font-size:22px; font-weight:700; color:var(--verde-700); margin:0 0 4px; }
+  .sub { font-size:13px; color:var(--mudo); margin:0 0 22px; }
+  label { display:block; font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:var(--mudo); margin-bottom:5px; }
+  .campo { display:flex; align-items:center; gap:8px; border:0.5px solid var(--borda); border-radius:8px; padding:0 12px; height:44px; margin-bottom:16px; }
+  .campo:focus-within { outline:2px solid var(--verde); outline-offset:1px; border-color:var(--verde-700); }
+  .campo input { border:none; outline:none; flex:1; font:inherit; font-size:14px; color:var(--texto); background:transparent; }
+  .olho { background:none; border:none; color:#b7b6b0; cursor:pointer; font-size:13px; font-family:inherit; }
+  button.entrar { width:100%; height:46px; border:none; border-radius:8px; background:var(--verde); color:var(--tinta);
+                  font:inherit; font-weight:600; font-size:15px; cursor:pointer; }
+  button.entrar:hover { background:#bfda69; }
+  button.entrar:disabled { opacity:.6; cursor:default; }
+  .erro { display:none; margin:0 0 14px; font-size:13px; color:#a32d2d; background:#fceceb; border:0.5px solid #f0a0a0;
+          border-radius:8px; padding:9px 12px; }
+  .erro.on { display:block; }
+  .rodape { margin-top:20px; font-size:11px; color:#b7b6b0; }
+</style>
+</head>
+<body>
+  <main class="cartao">
+    <div class="marca">
+      <div class="logo" aria-hidden="true">GS</div>
+      <div class="nome"><b>Grupo Support</b><small>Sinistro</small></div>
+    </div>
+    <h1>Entrar no painel</h1>
+    <p class="sub">Acesso interno do sinistro.</p>
+
+    <form id="form" autocomplete="on">
+      <div class="erro" id="erro" role="alert" aria-live="polite"></div>
+      <label for="usuario">Usuário</label>
+      <div class="campo"><input id="usuario" name="usuario" type="text" autocomplete="username" autocapitalize="none"
+        autocorrect="off" spellcheck="false" required autofocus placeholder="seu usuário"></div>
+      <label for="senha">Senha</label>
+      <div class="campo">
+        <input id="senha" name="senha" type="password" autocomplete="current-password" required placeholder="sua senha">
+        <button type="button" class="olho" id="olho" aria-label="Mostrar senha">mostrar</button>
+      </div>
+      <button type="submit" class="entrar" id="entrar">Entrar</button>
+    </form>
+
+    <p class="rodape">Uso interno — contém dados de associados.</p>
+  </main>
+
+<script>
+  var f = document.getElementById("form"), erro = document.getElementById("erro"),
+      entrar = document.getElementById("entrar"), olho = document.getElementById("olho"),
+      senha = document.getElementById("senha");
+  olho.addEventListener("click", function () {
+    var mostra = senha.type === "password";
+    senha.type = mostra ? "text" : "password";
+    olho.textContent = mostra ? "ocultar" : "mostrar";
+    olho.setAttribute("aria-label", mostra ? "Ocultar senha" : "Mostrar senha");
+  });
+  function proximo() {
+    try { var n = new URLSearchParams(location.search).get("next"); if (n && n.charAt(0) === "/" && n.charAt(1) !== "/") return n; } catch (e) {}
+    return "/";
+  }
+  f.addEventListener("submit", async function (ev) {
+    ev.preventDefault();
+    erro.classList.remove("on");
+    var usuario = document.getElementById("usuario").value.trim();
+    if (!usuario || !senha.value) { erro.textContent = "Preencha usuário e senha."; erro.classList.add("on"); return; }
+    entrar.disabled = true; entrar.textContent = "Entrando…";
+    try {
+      var r = await fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ usuario: usuario, senha: senha.value }) });
+      var j = await r.json().catch(function () { return {}; });
+      if (r.ok && j && j.ok) { location.replace(proximo()); return; }
+      erro.textContent = (j && j.erro) || "Não foi possível entrar."; erro.classList.add("on");
+    } catch (e) {
+      erro.textContent = "Falha de conexão. Tente de novo."; erro.classList.add("on");
+    }
+    entrar.disabled = false; entrar.textContent = "Entrar";
+  });
+</script>
+</body>
+</html>

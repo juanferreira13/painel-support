@@ -6,7 +6,7 @@
  * em memória por instância. Não configurado -> 501 (o site cai no modo demo).
  * ------------------------------------------------------------------------- */
 import { carregarTudo } from "./_core.js";
-import { autenticar } from "./_auth.js";
+import { autenticarReq } from "./_auth.js";
 
 export const maxDuration = 30;   // Vercel: dá folga pra leitura do Sheets (evita cair no demo por timeout)
 
@@ -41,9 +41,9 @@ export default async function handler(req, res) {
   if (!saJson || !sheetSinistro) {
     return json(res, 501, { configurado: false, erro: "Defina GOOGLE_SERVICE_ACCOUNT_JSON e SHEET_SINISTRO nas variáveis da Vercel." });
   }
-  // Papel do usuário logado (Basic Auth) -> setores que ele pode ver. O servidor
-  // é a fronteira de privacidade: só manda ao navegador os dados permitidos.
-  const auth = autenticar(req.headers && req.headers.authorization, process.env);
+  // Papel do usuário logado (cookie de sessão ou Basic) -> setores que ele pode
+  // ver. O servidor é a fronteira de privacidade: só manda os dados permitidos.
+  const auth = await autenticarReq(req, process.env);
   if (!auth) return json(res, 401, { erro: "Autenticação necessária." });
   const permitidos = auth.permitidos;
   const papel = auth.papel;

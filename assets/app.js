@@ -115,20 +115,13 @@
 
   const ROTULO_PAPEL = { gerencial: "Coordenação (vê tudo)", analistas: "Analistas", reguladores: "Reguladores", consultores: "Consultores" };
 
-  // Logout de HTTP Basic Auth: o navegador guarda o usuário/senha e os reenvia
-  // sozinho. Para "sair", mandamos uma requisição com credenciais INVÁLIDAS — o
-  // servidor responde 401 e o navegador passa a guardar essas credenciais ruins;
-  // ao recarregar, ele pede o login de novo. (No modo demo não há login: só recarrega.)
+  // Logout: apaga o cookie de sessão em /api/logout e volta pra tela de login.
+  // (No modo demo não há login nem /api/logout: a chamada falha e só recarrega.)
   function sair() {
     if (!window.confirm("Sair do painel? Vai ser preciso entrar com usuário e senha de novo.")) return;
-    const finaliza = () => location.replace("/?saiu=" + Date.now());
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", "/?logout=" + Date.now(), true, "sair", "sair-" + Date.now());
-      xhr.onloadend = finaliza;
-      xhr.onerror = finaliza;
-      xhr.send();
-    } catch (_) { finaliza(); }
+    const finaliza = () => location.replace("/login.html");
+    try { fetch("/api/logout", { method: "POST", cache: "no-store" }).then(finaliza, finaliza); }
+    catch (_) { finaliza(); }
   }
 
   function construirShell() {
